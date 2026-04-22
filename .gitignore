@@ -1,0 +1,14 @@
+# OS / editor junk
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vs/
+.vscode/
+
+# Build / tool output
+obj/
+bin/
+*.csproj
+*.sln
+*.user
