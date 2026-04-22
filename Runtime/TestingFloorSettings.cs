@@ -12,6 +12,7 @@ namespace TestingFloor {
         public string endpoint = "https://dataentry.testingfloor.com";
 
         public bool qrHeartbeatsEnabled = false;
+        public bool qrHeartbeatInverted = true;
         public float qrHeartbeatIntervalSeconds = 30f;
         public float qrHeartbeatVisibleSeconds = 0f;
         [HideInInspector] public int qrHeartbeatVisibleFrames = 6;

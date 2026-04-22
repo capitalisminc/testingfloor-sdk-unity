@@ -7,6 +7,7 @@ All notable changes to this package are documented here. Follows [Keep a Changel
 ### Added
 
 - Runtime QR heartbeat opt-in/out API via `TestingFloor.SetQrHeartbeatsEnabled(...)`.
+- Runtime QR heartbeat color override via `TestingFloor.SetQrHeartbeatInverted(...)`.
 - Documented telemetry QR payload format: `tfqr://sync/v1?s=<session_id>&t=<unix_ms>&q=<sequence>`.
 - Low-allocation telemetry JSON writer for the runtime send path.
 

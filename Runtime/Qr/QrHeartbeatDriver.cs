@@ -4,11 +4,13 @@ namespace TestingFloor {
     internal static class QrHeartbeatDriver {
         static GameObject _overlayGo;
         static bool? _enabledOverride;
+        static bool? _invertedOverride;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         static void ResetStatics() {
             _overlayGo = null;
             _enabledOverride = null;
+            _invertedOverride = null;
         }
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
@@ -24,6 +26,14 @@ namespace TestingFloor {
             }
         }
 
+        internal static bool EffectiveInverted {
+            get {
+                if (_invertedOverride.HasValue) return _invertedOverride.Value;
+                var settings = TestingFloorSettings.Current;
+                return settings == null || settings.qrHeartbeatInverted;
+            }
+        }
+
         internal static void SetEnabledOverride(bool enabled) {
             _enabledOverride = enabled;
             Apply();
@@ -32,6 +42,14 @@ namespace TestingFloor {
         internal static void ClearEnabledOverride() {
             _enabledOverride = null;
             Apply();
+        }
+
+        internal static void SetInvertedOverride(bool inverted) {
+            _invertedOverride = inverted;
+        }
+
+        internal static void ClearInvertedOverride() {
+            _invertedOverride = null;
         }
 
         static void Apply() {

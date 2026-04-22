@@ -11,6 +11,7 @@ namespace TestingFloor.Editor {
         SerializedProperty _writeKey;
         SerializedProperty _endpoint;
         SerializedProperty _qrEnabled;
+        SerializedProperty _qrInverted;
         SerializedProperty _qrInterval;
         SerializedProperty _qrVisibleSeconds;
 
@@ -22,6 +23,7 @@ namespace TestingFloor.Editor {
             _writeKey = serializedObject.FindProperty("writeKey");
             _endpoint = serializedObject.FindProperty("endpoint");
             _qrEnabled = serializedObject.FindProperty("qrHeartbeatsEnabled");
+            _qrInverted = serializedObject.FindProperty("qrHeartbeatInverted");
             _qrInterval = serializedObject.FindProperty("qrHeartbeatIntervalSeconds");
             _qrVisibleSeconds = serializedObject.FindProperty("qrHeartbeatVisibleSeconds");
         }
@@ -47,6 +49,10 @@ namespace TestingFloor.Editor {
             EditorGUILayout.LabelField("QR Heartbeat", EditorStyles.boldLabel);
             EditorGUILayout.PropertyField(_qrEnabled);
             using (new EditorGUI.DisabledScope(!_qrEnabled.boolValue)) {
+                EditorGUILayout.PropertyField(
+                    _qrInverted,
+                    new GUIContent("Inverted", "White modules on a black background. Disable for the normal black-on-white QR style.")
+                );
                 EditorGUILayout.PropertyField(_qrInterval);
                 EditorGUILayout.PropertyField(
                     _qrVisibleSeconds,

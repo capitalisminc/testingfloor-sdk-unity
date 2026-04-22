@@ -46,13 +46,39 @@ namespace TestingFloor.Tests {
         public void RenderedTextureDecodesWithThirdPartyReaderAtOverlayScale() {
             var payload = QrHeartbeatPayload.Build("0f4c6f65-49d5-4c40-b4d4-c2e7acb1f7a8", 1711234567890, 42);
             var matrix = QrEncoder.Encode(payload);
-            var texture = Render(matrix, scale: 3, quiet: 4);
+            var texture = Render(matrix, scale: 3, quiet: 4, inverted: false);
 
             try {
                 Assert.AreEqual(payload, DecodeWithZxing(texture));
             }
             finally {
                 UnityEngine.Object.DestroyImmediate(texture);
+            }
+        }
+
+        [Test]
+        public void InvertedRenderedTextureDecodesWithThirdPartyReaderAtOverlayScale() {
+            var payload = QrHeartbeatPayload.Build("0f4c6f65-49d5-4c40-b4d4-c2e7acb1f7a8", 1711234567890, 42);
+            var matrix = QrEncoder.Encode(payload);
+            var texture = Render(matrix, scale: 3, quiet: 4, inverted: true);
+
+            try {
+                Assert.AreEqual(payload, DecodeWithZxing(texture, tryInverted: true));
+            }
+            finally {
+                UnityEngine.Object.DestroyImmediate(texture);
+            }
+        }
+
+        [Test]
+        public void SettingsDefaultQrHeartbeatStyleIsInverted() {
+            var settings = ScriptableObject.CreateInstance<TestingFloorSettings>();
+
+            try {
+                Assert.IsTrue(settings.qrHeartbeatInverted);
+            }
+            finally {
+                UnityEngine.Object.DestroyImmediate(settings);
             }
         }
 
@@ -101,17 +127,18 @@ namespace TestingFloor.Tests {
             Assert.Throws<System.ArgumentException>(() => QrEncoder.Encode(text));
         }
 
-        static Texture2D Render(QrMatrix matrix, int scale, int quiet) {
-            return matrix.ToTexture(scale, quiet);
+        static Texture2D Render(QrMatrix matrix, int scale, int quiet, bool inverted = false) {
+            return matrix.ToTexture(scale, quiet, inverted);
         }
 
-        static string DecodeWithZxing(Texture2D texture) {
+        static string DecodeWithZxing(Texture2D texture, bool tryInverted = false) {
             var rgba = ToTopDownRgba(texture);
             var source = new RGBLuminanceSource(rgba, texture.width, texture.height, RGBLuminanceSource.BitmapFormat.RGBA32);
             var reader = new BarcodeReaderGeneric {
                 Options = new DecodingOptions {
                     PossibleFormats = new List<BarcodeFormat> { BarcodeFormat.QR_CODE },
                     TryHarder = true,
+                    TryInverted = tryInverted,
                 },
             };
             var result = reader.Decode(source);

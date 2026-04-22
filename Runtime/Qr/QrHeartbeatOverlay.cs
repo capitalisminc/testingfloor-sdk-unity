@@ -19,6 +19,7 @@ namespace TestingFloor {
         float _visibleUntil;
         long _sequence;
         bool _hasPayload;
+        bool _lastInverted;
 
         void Awake() {
             _settings = TestingFloorSettings.Current;
@@ -51,9 +52,10 @@ namespace TestingFloor {
             }
 
             var now = Time.realtimeSinceStartup;
+            var inverted = QrHeartbeatDriver.EffectiveInverted;
             var interval = Mathf.Max(1f, _settings.qrHeartbeatIntervalSeconds);
-            if (!_hasPayload || now >= _nextRefreshAt) {
-                if (Fire()) {
+            if (!_hasPayload || inverted != _lastInverted || now >= _nextRefreshAt) {
+                if (Fire(inverted)) {
                     _nextRefreshAt = now + interval;
                     var visibleSeconds = Mathf.Max(0f, _settings.qrHeartbeatVisibleSeconds);
                     _visibleUntil = visibleSeconds <= 0f
@@ -68,7 +70,7 @@ namespace TestingFloor {
             _image.enabled = _hasPayload && now < _visibleUntil;
         }
 
-        bool Fire() {
+        bool Fire(bool inverted) {
             var unixMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
             var sequence = _sequence + 1;
             var payload = QrHeartbeatPayload.Build(TestingFloorSession.EffectiveSessionId, unixMs, sequence);
@@ -79,10 +81,11 @@ namespace TestingFloor {
                 var targetSizePx = Mathf.Max(MinQrSize, Mathf.FloorToInt(BaselineQrSize * (Screen.height / 1080f)));
                 var totalModules = matrix.Size + QuietZoneModules * 2;
                 var moduleScale = Mathf.Max(1, Mathf.CeilToInt(targetSizePx / (float)totalModules));
-                _texture = matrix.ToTexture(scale: moduleScale, quiet: QuietZoneModules);
+                _texture = matrix.ToTexture(scale: moduleScale, quiet: QuietZoneModules, inverted: inverted);
                 _image.texture = _texture;
                 _image.rectTransform.sizeDelta = new Vector2(_texture.width, _texture.height);
                 _sequence = sequence;
+                _lastInverted = inverted;
                 _hasPayload = true;
                 return true;
             }

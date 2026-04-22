@@ -96,6 +96,14 @@ namespace TestingFloor {
             QrHeartbeatDriver.ClearEnabledOverride();
         }
 
+        public static void SetQrHeartbeatInverted(bool inverted) {
+            QrHeartbeatDriver.SetInvertedOverride(inverted);
+        }
+
+        public static void UseConfiguredQrHeartbeatColors() {
+            QrHeartbeatDriver.ClearInvertedOverride();
+        }
+
         public static TelemetryState State {
             get {
                 EnsureInitialized();
@@ -104,6 +112,8 @@ namespace TestingFloor {
         }
 
         public static bool QrHeartbeatsEnabled => QrHeartbeatDriver.EffectiveEnabled;
+
+        public static bool QrHeartbeatInverted => QrHeartbeatDriver.EffectiveInverted;
 
         public static string DeviceId => Identity.DeviceId;
 

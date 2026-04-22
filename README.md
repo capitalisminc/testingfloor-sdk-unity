@@ -62,7 +62,13 @@ TestingFloor.SetQrHeartbeatsEnabled(false);
 
 The QR appears in the top-right of the game view and helps Testing Floor line up the video with telemetry. If testers use the Testing Floor recorder, you usually do not need to enable it manually.
 
-You can also set `qrHeartbeatsEnabled` in `TestingFloorSettings` for builds where the QR should always follow the asset setting.
+The QR is inverted by default. Use normal black-on-white rendering if your recorder or scanner prefers it:
+
+```csharp
+TestingFloor.SetQrHeartbeatInverted(false);
+```
+
+You can also set `qrHeartbeatsEnabled` and `qrHeartbeatInverted` in `TestingFloorSettings` for builds where the QR should always follow the asset setting.
 
 ## Performance
 
@@ -80,11 +86,13 @@ await TestingFloor.FlushAsync(TimeSpan.FromSeconds(2));
 TestingFloor.SetQrHeartbeatsEnabled(true);
 TestingFloor.SetQrHeartbeatsEnabled(false);
 TestingFloor.UseConfiguredQrHeartbeats();
+TestingFloor.SetQrHeartbeatInverted(false);
+TestingFloor.UseConfiguredQrHeartbeatColors();
 ```
 
 ## Advanced
 
-`TestingFloorSettings` lives at `Assets/Resources/TestingFloorSettings.asset`. Most games only need `writeKey` and optionally `qrHeartbeatsEnabled`.
+`TestingFloorSettings` lives at `Assets/Resources/TestingFloorSettings.asset`. Most games only need `writeKey` and optionally `qrHeartbeatsEnabled` / `qrHeartbeatInverted`.
 
 Testing Floor launchers can pass session data with `--testing-floor={json}` or `{projectRoot}/Library/TestingFloor/session-payload.json`.
 
