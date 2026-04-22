@@ -1,6 +1,6 @@
 # Testing Floor SDK for Unity
 
-Telemetry and recording-sync primitives for Unity games using Testing Floor.
+Add lightweight telemetry and recording sync to Unity games tested with Testing Floor.
 
 ## Install
 
@@ -14,21 +14,11 @@ Add the package to `Packages/manifest.json`:
 }
 ```
 
-For local development:
-
-```json
-{
-  "dependencies": {
-    "com.testingfloor.unity-sdk": "file:../../testingfloor-sdk-unity"
-  }
-}
-```
-
 ## Setup
 
 1. In Unity, run **Tools -> Testing Floor -> Create Settings Asset**.
-2. Enter your Testing Floor write key.
-3. Send an event:
+2. Paste your Testing Floor write key.
+3. Track the moments you care about.
 
 ```csharp
 using TestingFloor;
@@ -39,15 +29,23 @@ TestingFloor.Track("weapon_fire")
     .Send();
 ```
 
-Flush before quit if needed:
+That is enough for basic telemetry. Testing Floor will associate events with the current playtest session when the game is launched from Testing Floor.
+
+## Recording Sync
+
+For recordings made outside the Testing Floor recorder, enable the sync QR:
 
 ```csharp
-await TestingFloor.FlushAsync(TimeSpan.FromSeconds(2));
+TestingFloor.SetQrHeartbeatsEnabled(true);
 ```
 
-## Context
+The QR appears in the top-right of the game view and helps Testing Floor line up video with telemetry.
 
-Register a context provider to add game state to every event:
+You can also enable it in `TestingFloorSettings` with `qrHeartbeatsEnabled`.
+
+## Game Context
+
+Use a context provider for state that should appear on every event:
 
 ```csharp
 public sealed class MyGameContextProvider : ITelemetryContextProvider {
@@ -62,65 +60,35 @@ TestingFloor.RegisterContextProvider(new MyGameContextProvider());
 
 Event-specific `.Set(...)` values win over context values with the same key.
 
-## Sessions
-
-The SDK can pick up a Testing Floor session from either:
-
-- `--testing-floor={json}` command-line argument
-- `{projectRoot}/Library/TestingFloor/session-payload.json`
-
-Example payload:
-
-```json
-{
-  "session_id": "tf_abc123",
-  "playtest_id": 123,
-  "created_at_unix_ms": 1711234567890
-}
-```
-
-When a session is present, the SDK sends `tf_session_start` and `tf_session_end`.
-If no session is provided, events still use a generated session id.
-
-## Recording QR
-
-Games can opt into a visible recording-sync QR:
+## Useful Calls
 
 ```csharp
-TestingFloor.SetQrHeartbeatsEnabled(true);
-```
+await TestingFloor.FlushAsync(TimeSpan.FromSeconds(2));
 
-The QR appears top-right in the game view and in recordings. It encodes:
-
-```text
-tfqr://sync/v1?s=<session_id>&t=<unix_ms>&q=<sequence>
-```
-
-Disable it with:
-
-```csharp
 TestingFloor.SetQrHeartbeatsEnabled(false);
-```
-
-Or return to the settings asset value:
-
-```csharp
 TestingFloor.UseConfiguredQrHeartbeats();
 ```
 
-## Settings
+## Advanced
 
-`TestingFloorSettings` is loaded from `Resources/TestingFloorSettings`.
+`TestingFloorSettings` lives at `Assets/Resources/TestingFloorSettings.asset`.
 
-| Field | Default | Purpose |
-| --- | --- | --- |
-| `enabled` | `true` | Master telemetry switch |
-| `enableInEditor` | `false` | Send telemetry in Play Mode |
-| `writeKey` | required | Testing Floor write key |
-| `endpoint` | `https://dataentry.testingfloor.com` | Collector URL |
-| `qrHeartbeatsEnabled` | `false` | Enable QR from settings |
-| `qrHeartbeatIntervalSeconds` | `30` | QR payload refresh interval |
-| `qrHeartbeatVisibleSeconds` | `0` | `0` means always visible |
+Most games only need `writeKey` and optionally `qrHeartbeatsEnabled`. The default endpoint is already set for Testing Floor.
+
+Testing Floor launchers can pass session data through either:
+
+- `--testing-floor={json}`
+- `{projectRoot}/Library/TestingFloor/session-payload.json`
+
+For local SDK development, use a file dependency:
+
+```json
+{
+  "dependencies": {
+    "com.testingfloor.unity-sdk": "file:../../testingfloor-sdk-unity"
+  }
+}
+```
 
 ## License
 
