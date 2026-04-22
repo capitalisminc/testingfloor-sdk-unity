@@ -75,11 +75,13 @@ namespace TestingFloor {
             try {
                 var matrix = QrEncoder.Encode(payload);
                 if (_texture != null) Destroy(_texture);
-                _texture = matrix.ToTexture(scale: 4, quiet: QuietZoneModules);
-                _image.texture = _texture;
 
-                var sizePx = Mathf.Max(MinQrSize, Mathf.FloorToInt(BaselineQrSize * (Screen.height / 1080f)));
-                _image.rectTransform.sizeDelta = new Vector2(sizePx, sizePx);
+                var targetSizePx = Mathf.Max(MinQrSize, Mathf.FloorToInt(BaselineQrSize * (Screen.height / 1080f)));
+                var totalModules = matrix.Size + QuietZoneModules * 2;
+                var moduleScale = Mathf.Max(1, Mathf.CeilToInt(targetSizePx / (float)totalModules));
+                _texture = matrix.ToTexture(scale: moduleScale, quiet: QuietZoneModules);
+                _image.texture = _texture;
+                _image.rectTransform.sizeDelta = new Vector2(_texture.width, _texture.height);
                 _sequence = sequence;
                 _hasPayload = true;
                 return true;
