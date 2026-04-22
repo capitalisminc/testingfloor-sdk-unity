@@ -1,24 +1,23 @@
 # Testing Floor SDK for Unity
 
-Add lightweight telemetry and recording sync to Unity games tested with Testing Floor.
+Add Testing Floor telemetry and recording sync to a Unity game.
 
 ## Install
 
-Add the package to `Packages/manifest.json`:
+In Unity:
 
-```json
-{
-  "dependencies": {
-    "com.testingfloor.unity-sdk": "https://github.com/capitalisminc/testingfloor-sdk-unity.git"
-  }
-}
+1. Open **Window -> Package Manager**.
+2. Click **+**.
+3. Choose **Add package from git URL...**.
+4. Paste:
+
+```text
+https://github.com/capitalisminc/testingfloor-sdk-unity.git
 ```
 
-## Setup
+Then run **Tools -> Testing Floor -> Create Settings Asset** and paste your Testing Floor write key.
 
-1. In Unity, run **Tools -> Testing Floor -> Create Settings Asset**.
-2. Paste your Testing Floor write key.
-3. Track the moments you care about.
+## Track Events
 
 ```csharp
 using TestingFloor;
@@ -29,23 +28,7 @@ TestingFloor.Track("weapon_fire")
     .Send();
 ```
 
-That is enough for basic telemetry. Testing Floor will associate events with the current playtest session when the game is launched from Testing Floor.
-
-## Recording Sync
-
-For recordings made outside the Testing Floor recorder, enable the sync QR:
-
-```csharp
-TestingFloor.SetQrHeartbeatsEnabled(true);
-```
-
-The QR appears in the top-right of the game view and helps Testing Floor line up video with telemetry.
-
-You can also enable it in `TestingFloorSettings` with `qrHeartbeatsEnabled`.
-
-## Game Context
-
-Use a context provider for state that should appear on every event:
+Add game state that should be attached to every event:
 
 ```csharp
 public sealed class MyGameContextProvider : ITelemetryContextProvider {
@@ -58,29 +41,49 @@ public sealed class MyGameContextProvider : ITelemetryContextProvider {
 TestingFloor.RegisterContextProvider(new MyGameContextProvider());
 ```
 
-Event-specific `.Set(...)` values win over context values with the same key.
+## Recording Sync
 
-## Useful Calls
+If testers record with OBS, browser capture, or another external recorder, enable the visible sync QR before recording starts:
+
+```csharp
+TestingFloor.SetQrHeartbeatsEnabled(true);
+```
+
+Turn it off when the recording flow ends:
+
+```csharp
+TestingFloor.SetQrHeartbeatsEnabled(false);
+```
+
+The QR appears in the top-right of the game view and helps Testing Floor line up the video with telemetry. If testers use the Testing Floor recorder, you usually do not need to enable it manually.
+
+You can also set `qrHeartbeatsEnabled` in `TestingFloorSettings` for builds where the QR should always follow the asset setting.
+
+## Performance
+
+- `Track(...).Send()` is lightweight and queues events in memory.
+- Calling `.Set(...)` stores event properties; avoid large objects or per-frame spam.
+- Context providers run for every event, so keep them cheap.
+- Network work happens when the SDK flushes queued events.
+- The QR overlay is disabled by default. When enabled, it renders cheaply but regenerates the QR texture on its refresh interval.
+
+## Common Calls
 
 ```csharp
 await TestingFloor.FlushAsync(TimeSpan.FromSeconds(2));
 
+TestingFloor.SetQrHeartbeatsEnabled(true);
 TestingFloor.SetQrHeartbeatsEnabled(false);
 TestingFloor.UseConfiguredQrHeartbeats();
 ```
 
 ## Advanced
 
-`TestingFloorSettings` lives at `Assets/Resources/TestingFloorSettings.asset`.
+`TestingFloorSettings` lives at `Assets/Resources/TestingFloorSettings.asset`. Most games only need `writeKey` and optionally `qrHeartbeatsEnabled`.
 
-Most games only need `writeKey` and optionally `qrHeartbeatsEnabled`. The default endpoint is already set for Testing Floor.
+Testing Floor launchers can pass session data with `--testing-floor={json}` or `{projectRoot}/Library/TestingFloor/session-payload.json`.
 
-Testing Floor launchers can pass session data through either:
-
-- `--testing-floor={json}`
-- `{projectRoot}/Library/TestingFloor/session-payload.json`
-
-For local SDK development, use a file dependency:
+For local SDK development, add this to `Packages/manifest.json`:
 
 ```json
 {
