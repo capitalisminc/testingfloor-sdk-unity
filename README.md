@@ -38,7 +38,12 @@ public sealed class MyGameContextProvider : ITelemetryContextProvider {
     }
 }
 
-TestingFloor.RegisterContextProvider(new MyGameContextProvider());
+public static class TestingFloorBootstrap {
+    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
+    static void Boot() {
+        TestingFloor.RegisterContextProvider(new MyGameContextProvider());
+    }
+}
 ```
 
 ## Recording Sync
