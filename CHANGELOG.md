@@ -11,6 +11,11 @@ All notable changes to this package are documented here. Follows [Keep a Changel
 - Documented telemetry QR payload format: `tfqr://sync/v1?s=<session_id>&t=<unix_ms>&q=<sequence>`.
 - Low-allocation telemetry JSON writer for the runtime send path.
 
+### Changed
+
+- QR heartbeat codes now rotate every 15 seconds by default.
+- QR heartbeat timing controls are presented as advanced settings in the custom inspector.
+
 ## [0.1.0] — 2026-04-19
 
 Initial release.

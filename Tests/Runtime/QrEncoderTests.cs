@@ -83,6 +83,19 @@ namespace TestingFloor.Tests {
         }
 
         [Test]
+        public void SettingsDefaultQrHeartbeatIntervalIsFifteenSeconds() {
+            var settings = ScriptableObject.CreateInstance<TestingFloorSettings>();
+
+            try {
+                Assert.AreEqual(15f, settings.qrHeartbeatIntervalSeconds);
+                Assert.AreEqual(15f, settings.EffectiveQrHeartbeatIntervalSeconds);
+            }
+            finally {
+                UnityEngine.Object.DestroyImmediate(settings);
+            }
+        }
+
+        [Test]
         public void HeartbeatPayloadEscapesSessionId() {
             var payload = QrHeartbeatPayload.Build("session with spaces", 1711234567890, 1);
             Assert.AreEqual("tfqr://sync/v1?s=session%20with%20spaces&t=1711234567890&q=1", payload);

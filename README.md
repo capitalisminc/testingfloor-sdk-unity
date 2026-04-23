@@ -62,6 +62,8 @@ TestingFloor.SetQrHeartbeatsEnabled(false);
 
 The QR appears in the top-right of the game view and helps Testing Floor line up the video with telemetry. If testers use the Testing Floor recorder, you usually do not need to enable it manually.
 
+When enabled, the QR changes every 15 seconds by default. Timing controls exist for unusual capture setups, but most projects should leave them alone.
+
 The QR is inverted by default. Use normal black-on-white rendering if your recorder or scanner prefers it:
 
 ```csharp
@@ -93,6 +95,8 @@ TestingFloor.UseConfiguredQrHeartbeatColors();
 ## Advanced
 
 `TestingFloorSettings` lives at `Assets/Resources/TestingFloorSettings.asset`. Most games only need `writeKey` and optionally `qrHeartbeatsEnabled` / `qrHeartbeatInverted`.
+
+QR heartbeat timing is an advanced sync setting. The default interval is 15 seconds, and tuning it is not usually recommended unless Testing Floor support asks you to adjust it.
 
 Testing Floor launchers can pass session data with `--testing-floor={json}` or `{projectRoot}/Library/TestingFloor/session-payload.json`.
 

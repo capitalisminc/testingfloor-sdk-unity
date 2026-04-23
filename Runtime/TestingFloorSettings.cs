@@ -13,7 +13,9 @@ namespace TestingFloor {
 
         public bool qrHeartbeatsEnabled = false;
         public bool qrHeartbeatInverted = true;
-        public float qrHeartbeatIntervalSeconds = 30f;
+        public const float DefaultQrHeartbeatIntervalSeconds = 15f;
+
+        public float qrHeartbeatIntervalSeconds = DefaultQrHeartbeatIntervalSeconds;
         public float qrHeartbeatVisibleSeconds = 0f;
         [HideInInspector] public int qrHeartbeatVisibleFrames = 6;
 
@@ -39,6 +41,12 @@ namespace TestingFloor {
                 if (string.IsNullOrWhiteSpace(writeKey)) return false;
                 if (string.IsNullOrWhiteSpace(endpoint)) return false;
                 return true;
+            }
+        }
+
+        internal float EffectiveQrHeartbeatIntervalSeconds {
+            get {
+                return Mathf.Max(1f, qrHeartbeatIntervalSeconds);
             }
         }
 

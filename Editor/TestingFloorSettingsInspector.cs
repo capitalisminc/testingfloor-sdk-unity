@@ -14,6 +14,7 @@ namespace TestingFloor.Editor {
         SerializedProperty _qrInverted;
         SerializedProperty _qrInterval;
         SerializedProperty _qrVisibleSeconds;
+        bool _showAdvancedQrTiming;
 
         void OnEnable() {
             _enabled = serializedObject.FindProperty("enabled");
@@ -53,11 +54,21 @@ namespace TestingFloor.Editor {
                     _qrInverted,
                     new GUIContent("Inverted", "White modules on a black background. Disable for the normal black-on-white QR style.")
                 );
-                EditorGUILayout.PropertyField(_qrInterval);
-                EditorGUILayout.PropertyField(
-                    _qrVisibleSeconds,
-                    new GUIContent("Visible Seconds", "0 keeps the QR visible continuously. Use 10 for 10-second beacon windows.")
-                );
+                _showAdvancedQrTiming = EditorGUILayout.Foldout(_showAdvancedQrTiming, "Advanced Timing", true);
+                if (_showAdvancedQrTiming) {
+                    EditorGUILayout.HelpBox(
+                        "Leave QR timing at its defaults unless Testing Floor support asks you to adjust sync behavior.",
+                        MessageType.Info
+                    );
+                    EditorGUILayout.PropertyField(
+                        _qrInterval,
+                        new GUIContent("Interval Seconds", "Advanced sync setting. Defaults to 15 seconds between QR transitions; tuning is not usually recommended.")
+                    );
+                    EditorGUILayout.PropertyField(
+                        _qrVisibleSeconds,
+                        new GUIContent("Visible Seconds", "Advanced sync setting. 0 keeps the QR visible continuously.")
+                    );
+                }
             }
 
             serializedObject.ApplyModifiedProperties();

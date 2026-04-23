@@ -53,7 +53,7 @@ namespace TestingFloor {
 
             var now = Time.realtimeSinceStartup;
             var inverted = QrHeartbeatDriver.EffectiveInverted;
-            var interval = Mathf.Max(1f, _settings.qrHeartbeatIntervalSeconds);
+            var interval = _settings.EffectiveQrHeartbeatIntervalSeconds;
             if (!_hasPayload || inverted != _lastInverted || now >= _nextRefreshAt) {
                 if (Fire(inverted)) {
                     _nextRefreshAt = now + interval;
