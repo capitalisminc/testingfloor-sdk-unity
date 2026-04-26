@@ -28,13 +28,15 @@ TestingFloor.Track("weapon_fire")
     .Send();
 ```
 
+`Set` accepts `string`, `long` (and `int`), `double` (and `float`), `bool`, `string[]`, and `int[]`. Other types — enums, `decimal`, `DateTime`, custom structs — are a compile error; convert at the call site (e.g. `weapon.ToString()`, `(long)timestamp.Ticks`) so the type sent over the wire is explicit.
+
 Add game state that should be attached to every event:
 
 ```csharp
 public sealed class MyGameContextProvider : ITelemetryContextProvider {
     public void FillSnapshot(ref ContextSnapshot snapshot) {
         snapshot.Set("level.id", Level.Current?.Id);
-        snapshot.Set("player.hp_percent", Player.Current?.HpPercent ?? 0);
+        snapshot.Set("player.hp_percent", Player.Current?.HpPercent ?? 0.0);
     }
 }
 

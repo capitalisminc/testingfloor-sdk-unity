@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using TestingFloor.Internal;
 
@@ -33,12 +34,6 @@ namespace TestingFloor {
 
         public void Set(string key, bool value) {
             if (string.IsNullOrWhiteSpace(key)) return;
-            Properties ??= TelemetryQueue.RentProperties();
-            Properties[key] = value;
-        }
-
-        public void Set(string key, object value) {
-            if (string.IsNullOrWhiteSpace(key) || value == null) return;
             Properties ??= TelemetryQueue.RentProperties();
             Properties[key] = value;
         }
@@ -84,8 +79,8 @@ namespace TestingFloor {
                     writer.WriteEndArray();
                     break;
                 default:
-                    writer.WriteString(key, value.ToString());
-                    break;
+                    throw new InvalidOperationException(
+                        $"Unsupported TestingFloor property type for '{key}': {value.GetType()}.");
             }
         }
     }

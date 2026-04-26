@@ -81,6 +81,42 @@ namespace TestingFloor.Tests {
             StringAssert.Contains("\"tags\":[\"alpha\",\"beta\"]", json);
         }
 
+        [Test]
+        public void NumericAndBoolPropertiesRenderAsJsonTokensNotStrings() {
+            var writer = new JsonPayloadWriter();
+            var snapshot = ContextSnapshot.Create(GetPlatformContextForTesting());
+            var props = new Dictionary<string, object> {
+                ["i"] = 7,
+                ["l"] = 9000000000L,
+                ["f"] = 1.5f,
+                ["d"] = 2.25,
+                ["b_true"] = true,
+                ["b_false"] = false,
+            };
+            var ev = new TelemetryEvent("t", props, snapshot, "d", "u", 0, "s");
+            var bytes = writer.Build(ev, "wk", "fallback").ToArray();
+            var json = Encoding.UTF8.GetString(bytes);
+
+            StringAssert.Contains("\"i\":7", json);
+            StringAssert.Contains("\"l\":9000000000", json);
+            StringAssert.Contains("\"f\":1.5", json);
+            StringAssert.Contains("\"d\":2.25", json);
+            StringAssert.Contains("\"b_true\":true", json);
+            StringAssert.Contains("\"b_false\":false", json);
+            StringAssert.DoesNotContain("\"i\":\"7\"", json);
+            StringAssert.DoesNotContain("\"b_true\":\"true\"", json);
+        }
+
+        [Test]
+        public void UnsupportedPropertyTypeThrows() {
+            var writer = new JsonPayloadWriter();
+            var snapshot = ContextSnapshot.Create(GetPlatformContextForTesting());
+            var props = new Dictionary<string, object> { ["mood"] = System.DayOfWeek.Friday };
+            var ev = new TelemetryEvent("t", props, snapshot, "d", "u", 0, "s");
+
+            Assert.Throws<System.InvalidOperationException>(() => writer.Build(ev, "wk", "fallback"));
+        }
+
         static PlatformContext GetPlatformContextForTesting() {
             // Can be called from non-play tests — Application.platform is still safe.
             return PlatformContext.Capture();

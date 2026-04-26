@@ -16,6 +16,10 @@ All notable changes to this package are documented here. Follows [Keep a Changel
 - QR heartbeat codes now rotate every 15 seconds by default.
 - QR heartbeat timing controls are presented as advanced settings in the custom inspector.
 
+### Removed
+
+- `Set(string, object)` overload on `EventBuilder` and `ContextSnapshot`. Property values must use a typed overload (`string`, `long`, `double`, `bool`, `string[]`, `int[]`) so they serialize as the correct JSON token instead of silently stringifying.
+
 ## [0.1.0] — 2026-04-19
 
 Initial release.

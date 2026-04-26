@@ -31,12 +31,6 @@ namespace TestingFloor.Tests {
         }
 
         [Test]
-        public void SetNullObjectDoesNotAllocate() {
-            var b = new EventBuilder { _eventType = "test" }.Set("key", (object)null);
-            Assert.IsNull(b._properties);
-        }
-
-        [Test]
         public void ChainedOverridesLastWins() {
             var b = new EventBuilder { _eventType = "test" }
                 .Set("k", "first")
