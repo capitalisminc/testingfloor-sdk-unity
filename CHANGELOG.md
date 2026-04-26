@@ -19,6 +19,8 @@ All notable changes to this package are documented here. Follows [Keep a Changel
 ### Added
 
 - Typed `Set(string, string[])` and `Set(string, int[])` overloads on `EventBuilder` and `ContextSnapshot` for tag-style array properties.
+- `Set(string, Guid)` overload that serializes the GUID as a JSON string.
+- `SetIfPresent` overloads for `int?`, `long?`, `float?`, `double?`, and `bool?` that skip when the value is `null`.
 
 ### Removed
 

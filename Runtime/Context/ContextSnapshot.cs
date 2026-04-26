@@ -50,6 +50,32 @@ namespace TestingFloor {
             Properties[key] = value;
         }
 
+        public void Set(string key, Guid value) {
+            if (string.IsNullOrWhiteSpace(key)) return;
+            Properties ??= TelemetryQueue.RentProperties();
+            Properties[key] = value;
+        }
+
+        public void SetIfPresent(string key, int? value) {
+            if (value.HasValue) Set(key, value.Value);
+        }
+
+        public void SetIfPresent(string key, long? value) {
+            if (value.HasValue) Set(key, value.Value);
+        }
+
+        public void SetIfPresent(string key, float? value) {
+            if (value.HasValue) Set(key, value.Value);
+        }
+
+        public void SetIfPresent(string key, double? value) {
+            if (value.HasValue) Set(key, value.Value);
+        }
+
+        public void SetIfPresent(string key, bool? value) {
+            if (value.HasValue) Set(key, value.Value);
+        }
+
         internal static void WriteObjectValue(TelemetryJsonWriter writer, string key, object value) {
             switch (value) {
                 case null:
@@ -71,6 +97,9 @@ namespace TestingFloor {
                     break;
                 case bool b:
                     writer.WriteBoolean(key, b);
+                    break;
+                case Guid g:
+                    writer.WriteString(key, g);
                     break;
                 case string[] arr:
                     writer.WritePropertyName(key);

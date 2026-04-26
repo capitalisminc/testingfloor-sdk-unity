@@ -108,6 +108,21 @@ namespace TestingFloor.Tests {
         }
 
         [Test]
+        public void GuidPropertyRendersAsString() {
+            var writer = new JsonPayloadWriter();
+            var snapshot = ContextSnapshot.Create(GetPlatformContextForTesting());
+            var id = System.Guid.Parse("11111111-2222-3333-4444-555555555555");
+            var props = new System.Collections.Generic.Dictionary<string, object> {
+                ["entity.id"] = id,
+            };
+            var ev = new TelemetryEvent("t", props, snapshot, "d", "u", 0, "s");
+            var bytes = writer.Build(ev, "wk", "fallback").ToArray();
+            var json = Encoding.UTF8.GetString(bytes);
+
+            StringAssert.Contains("\"entity.id\":\"11111111-2222-3333-4444-555555555555\"", json);
+        }
+
+        [Test]
         public void UnsupportedPropertyTypeThrows() {
             var writer = new JsonPayloadWriter();
             var snapshot = ContextSnapshot.Create(GetPlatformContextForTesting());

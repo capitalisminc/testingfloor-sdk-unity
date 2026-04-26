@@ -1,3 +1,4 @@
+using System;
 using NUnit.Framework;
 
 namespace TestingFloor.Tests {
@@ -49,6 +50,41 @@ namespace TestingFloor.Tests {
 
             Assert.AreSame(strs, b._properties["tags"]);
             Assert.AreSame(ints, b._properties["levels"]);
+        }
+
+        [Test]
+        public void SetAcceptsGuid() {
+            var id = Guid.NewGuid();
+            var b = new EventBuilder { _eventType = "test" }.Set("entity.id", id);
+            Assert.AreEqual(id, b._properties["entity.id"]);
+        }
+
+        [Test]
+        public void SetIfPresentSkipsNullPrimitives() {
+            var b = new EventBuilder { _eventType = "test" }
+                .SetIfPresent("a", (int?)null)
+                .SetIfPresent("b", (long?)null)
+                .SetIfPresent("c", (float?)null)
+                .SetIfPresent("d", (double?)null)
+                .SetIfPresent("e", (bool?)null);
+
+            Assert.IsNull(b._properties);
+        }
+
+        [Test]
+        public void SetIfPresentSetsPresentPrimitives() {
+            var b = new EventBuilder { _eventType = "test" }
+                .SetIfPresent("i", (int?)7)
+                .SetIfPresent("l", (long?)9000000000L)
+                .SetIfPresent("f", (float?)1.5f)
+                .SetIfPresent("d", (double?)2.25)
+                .SetIfPresent("b", (bool?)true);
+
+            Assert.AreEqual(7L, b._properties["i"]);
+            Assert.AreEqual(9000000000L, b._properties["l"]);
+            Assert.AreEqual(1.5, b._properties["f"]);
+            Assert.AreEqual(2.25, b._properties["d"]);
+            Assert.AreEqual(true, b._properties["b"]);
         }
     }
 }

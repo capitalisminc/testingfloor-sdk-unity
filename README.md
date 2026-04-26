@@ -28,7 +28,7 @@ TestingFloor.Track("weapon_fire")
     .Send();
 ```
 
-`Set` accepts `string`, `long` (and `int`), `double` (and `float`), `bool`, `string[]`, and `int[]`. Other types — enums, `decimal`, `DateTime`, custom structs — are a compile error; convert at the call site (e.g. `weapon.ToString()`, `(long)timestamp.Ticks`) so the type sent over the wire is explicit.
+`Set` accepts `string`, `long` (and `int`), `double` (and `float`), `bool`, `string[]`, `int[]`, and `Guid`. For optional values, `SetIfPresent` accepts `string`, `int?`, `long?`, `float?`, `double?`, and `bool?` and skips when null. Other types — enums, `decimal`, `DateTime`, custom structs — are a compile error; convert at the call site (e.g. `weapon.ToString()`, `(long)timestamp.Ticks`) so the type sent over the wire is explicit.
 
 Add game state that should be attached to every event:
 
