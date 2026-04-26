@@ -30,6 +30,20 @@ namespace TestingFloor {
             return this;
         }
 
+        public EventBuilder Set(string key, string[] value) {
+            if (value == null) return this;
+            _properties ??= TelemetryQueue.RentProperties();
+            _properties[key] = value;
+            return this;
+        }
+
+        public EventBuilder Set(string key, int[] value) {
+            if (value == null) return this;
+            _properties ??= TelemetryQueue.RentProperties();
+            _properties[key] = value;
+            return this;
+        }
+
         public EventBuilder SetIfPresent(string key, string value) {
             if (string.IsNullOrWhiteSpace(value)) return this;
             _properties ??= TelemetryQueue.RentProperties();

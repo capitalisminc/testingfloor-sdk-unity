@@ -38,5 +38,17 @@ namespace TestingFloor.Tests {
 
             Assert.AreEqual("second", b._properties["k"]);
         }
+
+        [Test]
+        public void SetAcceptsStringAndIntArrays() {
+            var strs = new[] { "a", "b" };
+            var ints = new[] { 1, 2, 3 };
+            var b = new EventBuilder { _eventType = "test" }
+                .Set("tags", strs)
+                .Set("levels", ints);
+
+            Assert.AreSame(strs, b._properties["tags"]);
+            Assert.AreSame(ints, b._properties["levels"]);
+        }
     }
 }

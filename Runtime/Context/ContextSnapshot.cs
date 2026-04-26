@@ -38,6 +38,18 @@ namespace TestingFloor {
             Properties[key] = value;
         }
 
+        public void Set(string key, string[] value) {
+            if (string.IsNullOrWhiteSpace(key) || value == null) return;
+            Properties ??= TelemetryQueue.RentProperties();
+            Properties[key] = value;
+        }
+
+        public void Set(string key, int[] value) {
+            if (string.IsNullOrWhiteSpace(key) || value == null) return;
+            Properties ??= TelemetryQueue.RentProperties();
+            Properties[key] = value;
+        }
+
         internal static void WriteObjectValue(TelemetryJsonWriter writer, string key, object value) {
             switch (value) {
                 case null:
@@ -70,12 +82,6 @@ namespace TestingFloor {
                     writer.WritePropertyName(key);
                     writer.WriteStartArray();
                     for (var i2 = 0; i2 < intArr.Length; i2++) writer.WriteNumberValue(intArr[i2]);
-                    writer.WriteEndArray();
-                    break;
-                case IReadOnlyList<string> strList:
-                    writer.WritePropertyName(key);
-                    writer.WriteStartArray();
-                    for (var i2 = 0; i2 < strList.Count; i2++) writer.WriteStringValue(strList[i2]);
                     writer.WriteEndArray();
                     break;
                 default:
