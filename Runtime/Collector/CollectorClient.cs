@@ -1,9 +1,20 @@
 using System;
+using System.Collections.Generic;
 using System.Threading.Tasks;
 using UnityEngine;
 using UnityEngine.Networking;
 
 namespace TestingFloor.Internal {
+    internal readonly struct BatchSendOutcome {
+        public readonly SendResult Result;
+        public readonly int Consumed;
+
+        public BatchSendOutcome(SendResult result, int consumed) {
+            Result = result;
+            Consumed = consumed;
+        }
+    }
+
     internal sealed class CollectorClient {
         readonly TestingFloorSettings _settings;
         readonly JsonPayloadWriter _writer = new();
@@ -14,15 +25,33 @@ namespace TestingFloor.Internal {
             _settings = settings;
         }
 
-        public async ValueTask<SendResult> TrackEventAsync(TelemetryEvent telemetryEvent) {
-            if (_invalidWriteKey) return SendResult.FatalConfiguration;
-            if (_settings == null || !_settings.IsEnabledForBuild) return SendResult.FatalConfiguration;
-            if (string.IsNullOrWhiteSpace(_settings.writeKey)) return SendResult.FatalConfiguration;
-            if (string.IsNullOrWhiteSpace(_settings.endpoint)) return SendResult.FatalConfiguration;
-            if (string.IsNullOrWhiteSpace(telemetryEvent.EventType)) return SendResult.FatalConfiguration;
+        public async ValueTask<BatchSendOutcome> TrackBatchAsync(IReadOnlyList<TelemetryEvent> events) {
+            if (events == null || events.Count == 0) return new BatchSendOutcome(SendResult.Success, 0);
+            if (_invalidWriteKey) return new BatchSendOutcome(SendResult.FatalConfiguration, events.Count);
+            if (_settings == null || !_settings.IsEnabledForBuild) return new BatchSendOutcome(SendResult.FatalConfiguration, events.Count);
+            if (string.IsNullOrWhiteSpace(_settings.writeKey)) return new BatchSendOutcome(SendResult.FatalConfiguration, events.Count);
+            if (string.IsNullOrWhiteSpace(_settings.endpoint)) return new BatchSendOutcome(SendResult.FatalConfiguration, events.Count);
 
             var sessionId = TestingFloorSession.EffectiveSessionId;
-            var bytes = _writer.Build(telemetryEvent, _settings.writeKey, sessionId).ToArray();
+            // Reserve room for the envelope and gzip headroom inside the collector's body cap.
+            var maxBodyBytes = JsonPayloadWriter.CollectorBodyByteCap - JsonPayloadWriter.BodySafetyMargin;
+            var span = _writer.BuildBatch(
+                events,
+                _settings.writeKey,
+                sessionId,
+                maxBodyBytes,
+                JsonPayloadWriter.CollectorEventByteCap,
+                _settings,
+                out var consumed,
+                out var written);
+
+            if (written == 0) {
+                // Every candidate event was oversized and skipped. Tell the caller to dequeue
+                // them but treat the (non-)send as a Success — there's nothing to retry.
+                return new BatchSendOutcome(SendResult.Success, consumed);
+            }
+
+            var bytes = span.ToArray();
 
             using var request = new UnityWebRequest(BuildEndpoint(), UnityWebRequest.kHttpVerbPOST);
             request.uploadHandler = new UploadHandlerRaw(bytes);
@@ -36,14 +65,14 @@ namespace TestingFloor.Internal {
                 if (_settings.logErrors) {
                     Debug.LogWarning($"[TestingFloor] Collector request failed: {ex.Message}");
                 }
-                return SendResult.TransientFailure;
+                return new BatchSendOutcome(SendResult.TransientFailure, consumed);
             }
 
             if (request.result == UnityWebRequest.Result.Success) {
                 if (_settings.logEventSends) {
-                    Debug.Log($"[TestingFloor] Sent event {telemetryEvent.EventType} ({request.responseCode}).");
+                    Debug.Log($"[TestingFloor] Sent batch of {written} event(s) ({request.responseCode}).");
                 }
-                return SendResult.Success;
+                return new BatchSendOutcome(SendResult.Success, consumed);
             }
 
             if (request.responseCode == 401) {
@@ -52,7 +81,7 @@ namespace TestingFloor.Internal {
                     _loggedInvalidWriteKey = true;
                     Debug.LogError("[TestingFloor] Write key rejected (401). Collector sends are now disabled for this session.");
                 }
-                return SendResult.FatalConfiguration;
+                return new BatchSendOutcome(SendResult.FatalConfiguration, consumed);
             }
 
             if (_settings.logErrors) {
@@ -61,7 +90,7 @@ namespace TestingFloor.Internal {
                 Debug.LogWarning($"[TestingFloor] Collector request failed: {request.result} {request.error} ({request.responseCode}).{suffix}");
             }
 
-            return SendResult.TransientFailure;
+            return new BatchSendOutcome(SendResult.TransientFailure, consumed);
         }
 
         string BuildEndpoint() {

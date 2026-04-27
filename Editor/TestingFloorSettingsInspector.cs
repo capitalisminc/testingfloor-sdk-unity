@@ -20,8 +20,11 @@ namespace TestingFloor.Editor {
         SerializedProperty _movementStartGraceSeconds;
         SerializedProperty _movementStopGraceSeconds;
         SerializedProperty _movementMinStep;
+        SerializedProperty _batchMaxEvents;
+        SerializedProperty _batchMaxFlushIntervalSeconds;
         bool _showAdvancedQrTiming;
         bool _showAdvancedMovementTuning;
+        bool _showAdvancedBatching;
 
         void OnEnable() {
             _enabled = serializedObject.FindProperty("enabled");
@@ -40,6 +43,8 @@ namespace TestingFloor.Editor {
             _movementStartGraceSeconds = serializedObject.FindProperty("movementStartGraceSeconds");
             _movementStopGraceSeconds = serializedObject.FindProperty("movementStopGraceSeconds");
             _movementMinStep = serializedObject.FindProperty("movementMinStep");
+            _batchMaxEvents = serializedObject.FindProperty("batchMaxEvents");
+            _batchMaxFlushIntervalSeconds = serializedObject.FindProperty("batchMaxFlushIntervalSeconds");
         }
 
         public override void OnInspectorGUI() {
@@ -82,6 +87,24 @@ namespace TestingFloor.Editor {
                         new GUIContent("Visible Seconds", "Advanced sync setting. 0 keeps the QR visible continuously.")
                     );
                 }
+            }
+
+            EditorGUILayout.Space();
+            EditorGUILayout.LabelField("Batching", EditorStyles.boldLabel);
+            _showAdvancedBatching = EditorGUILayout.Foldout(_showAdvancedBatching, "Advanced Batching", true);
+            if (_showAdvancedBatching) {
+                EditorGUILayout.HelpBox(
+                    "The collector accepts up to 2000 events / 1 MB per request. Defaults bundle up to 50 events with a 250 ms flush window — usually leave alone.",
+                    MessageType.Info
+                );
+                EditorGUILayout.PropertyField(
+                    _batchMaxEvents,
+                    new GUIContent("Max Events", "Maximum events bundled into a single /v1/batch request.")
+                );
+                EditorGUILayout.PropertyField(
+                    _batchMaxFlushIntervalSeconds,
+                    new GUIContent("Max Flush Interval (s)", "How long to wait for additional events to fill the batch before sending what's already queued. Set to 0 to send whatever is in the queue immediately, without waiting for more.")
+                );
             }
 
             EditorGUILayout.Space();
