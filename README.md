@@ -48,6 +48,41 @@ public static class TestingFloorBootstrap {
 }
 ```
 
+## Player & Camera Context
+
+Hand the SDK a player transform and a camera, and every event will automatically carry position, camera pose, camera FOV, and viewport size — no per-call wiring:
+
+```csharp
+TestingFloor.SetPositionSource(playerTransform);
+TestingFloor.UseMainCamera();
+```
+
+These attach `player.position.{x,y,z}`, `camera.position.{x,y,z}`, `camera.euler.{x,y,z}`, `camera.fov`, `viewport.width`, and `viewport.height` to every event. If you don't have a `Transform` handy, pass a `Func<Vector3?>` instead; return `null` to omit the player keys from that event. Same for the camera with `SetCameraSource(Func<Camera>)`. Clear with `ClearPositionSource()` / `ClearCameraSource()`.
+
+## Movement Events
+
+Once a position source is registered, you can opt into a debounced `player_moved` event that won't blast one event per frame:
+
+```csharp
+TestingFloor.SetMovementTrackingEnabled(true);
+```
+
+The event carries:
+
+- `movement.reason` — `start` (player just began moving), `ping` (still moving — emitted on a debounce), or `stop` (movement ended)
+- `movement.distance` — meters covered in the segment this event closes (segment-since-last-ping for `ping`, full run for `stop`)
+- `movement.duration` — seconds elapsed in the same segment
+
+Defaults are tuned for a 1-unit-per-meter humanoid character at roughly 2 path samples per second. Tune them on the settings asset if your scale or pacing is different:
+
+- `movementMinPingDistance` (default `0.5`)
+- `movementMinPingIntervalSeconds` (default `0.5`)
+- `movementStartGraceSeconds` (default `0.05`)
+- `movementStopGraceSeconds` (default `0.25`)
+- `movementMinStep` (default `0.005`) — sub-step jitter ignored
+
+You can also flip `movementTrackingEnabled` on the settings asset to make the project's default opt-in. `TestingFloor.UseConfiguredMovementTracking()` reverts the runtime override back to the asset's value.
+
 ## Recording Sync
 
 If testers record with OBS, browser capture, or another external recorder, enable the visible sync QR before recording starts:
@@ -86,6 +121,10 @@ You can also set `qrHeartbeatsEnabled` and `qrHeartbeatInverted` in `TestingFloo
 
 ```csharp
 await TestingFloor.FlushAsync(TimeSpan.FromSeconds(2));
+
+TestingFloor.SetPositionSource(playerTransform);
+TestingFloor.UseMainCamera();
+TestingFloor.SetMovementTrackingEnabled(true);
 
 TestingFloor.SetQrHeartbeatsEnabled(true);
 TestingFloor.SetQrHeartbeatsEnabled(false);

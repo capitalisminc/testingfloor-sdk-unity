@@ -6,6 +6,8 @@ All notable changes to this package are documented here. Follows [Keep a Changel
 
 ### Added
 
+- `TestingFloor.SetPositionSource(...)` and `TestingFloor.SetCameraSource(...)` / `UseMainCamera()` register the player transform and camera so every event automatically carries `player.position.*`, `camera.position.*`, `camera.euler.*`, `camera.fov`, and `viewport.width`/`height`. Property keys match the names the Testing Floor heatmap and session viewer already consume.
+- Built-in debounced `player_moved` event with `movement.reason` of `start` / `stop` / `ping`, plus `movement.distance` (meters) and `movement.duration` (seconds) on `ping` and `stop` so segment length and run length are queryable directly. Toggle with `TestingFloorSettings.movementTrackingEnabled` or `TestingFloor.SetMovementTrackingEnabled(...)`. Thresholds (`movementMinPingDistance`, `movementMinPingIntervalSeconds`, `movementStartGraceSeconds`, `movementStopGraceSeconds`, `movementMinStep`) are tunable on the settings asset; defaults target ~2 path samples per second.
 - Runtime QR heartbeat opt-in/out API via `TestingFloor.SetQrHeartbeatsEnabled(...)`.
 - Runtime QR heartbeat color override via `TestingFloor.SetQrHeartbeatInverted(...)`.
 - Documented telemetry QR payload format: `tfqr://sync/v1?s=<session_id>&t=<unix_ms>&q=<sequence>`.

@@ -14,7 +14,14 @@ namespace TestingFloor.Editor {
         SerializedProperty _qrInverted;
         SerializedProperty _qrInterval;
         SerializedProperty _qrVisibleSeconds;
+        SerializedProperty _movementEnabled;
+        SerializedProperty _movementMinPingDistance;
+        SerializedProperty _movementMinPingIntervalSeconds;
+        SerializedProperty _movementStartGraceSeconds;
+        SerializedProperty _movementStopGraceSeconds;
+        SerializedProperty _movementMinStep;
         bool _showAdvancedQrTiming;
+        bool _showAdvancedMovementTuning;
 
         void OnEnable() {
             _enabled = serializedObject.FindProperty("enabled");
@@ -27,6 +34,12 @@ namespace TestingFloor.Editor {
             _qrInverted = serializedObject.FindProperty("qrHeartbeatInverted");
             _qrInterval = serializedObject.FindProperty("qrHeartbeatIntervalSeconds");
             _qrVisibleSeconds = serializedObject.FindProperty("qrHeartbeatVisibleSeconds");
+            _movementEnabled = serializedObject.FindProperty("movementTrackingEnabled");
+            _movementMinPingDistance = serializedObject.FindProperty("movementMinPingDistance");
+            _movementMinPingIntervalSeconds = serializedObject.FindProperty("movementMinPingIntervalSeconds");
+            _movementStartGraceSeconds = serializedObject.FindProperty("movementStartGraceSeconds");
+            _movementStopGraceSeconds = serializedObject.FindProperty("movementStopGraceSeconds");
+            _movementMinStep = serializedObject.FindProperty("movementMinStep");
         }
 
         public override void OnInspectorGUI() {
@@ -67,6 +80,42 @@ namespace TestingFloor.Editor {
                     EditorGUILayout.PropertyField(
                         _qrVisibleSeconds,
                         new GUIContent("Visible Seconds", "Advanced sync setting. 0 keeps the QR visible continuously.")
+                    );
+                }
+            }
+
+            EditorGUILayout.Space();
+            EditorGUILayout.LabelField("Movement Tracking", EditorStyles.boldLabel);
+            EditorGUILayout.PropertyField(
+                _movementEnabled,
+                new GUIContent("Enabled", "Emit a debounced tf_player_moved event when the registered position source moves. Requires TestingFloor.SetPositionSource(...) at runtime.")
+            );
+            using (new EditorGUI.DisabledScope(!_movementEnabled.boolValue)) {
+                _showAdvancedMovementTuning = EditorGUILayout.Foldout(_showAdvancedMovementTuning, "Advanced Tuning", true);
+                if (_showAdvancedMovementTuning) {
+                    EditorGUILayout.HelpBox(
+                        "Defaults are tuned for a humanoid character on a 1-unit-per-meter scale. Tune if your project uses a different scale.",
+                        MessageType.Info
+                    );
+                    EditorGUILayout.PropertyField(
+                        _movementMinPingDistance,
+                        new GUIContent("Min Ping Distance", "Accumulated distance required between ping events.")
+                    );
+                    EditorGUILayout.PropertyField(
+                        _movementMinPingIntervalSeconds,
+                        new GUIContent("Min Ping Interval (s)", "Minimum seconds between consecutive ping events.")
+                    );
+                    EditorGUILayout.PropertyField(
+                        _movementStartGraceSeconds,
+                        new GUIContent("Start Grace (s)", "How long sustained motion is required before a 'start' event fires.")
+                    );
+                    EditorGUILayout.PropertyField(
+                        _movementStopGraceSeconds,
+                        new GUIContent("Stop Grace (s)", "How long stillness is required before a 'stop' event fires.")
+                    );
+                    EditorGUILayout.PropertyField(
+                        _movementMinStep,
+                        new GUIContent("Min Step", "Per-frame movement smaller than this is treated as jitter and ignored.")
                     );
                 }
             }

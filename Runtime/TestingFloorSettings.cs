@@ -19,6 +19,13 @@ namespace TestingFloor {
         public float qrHeartbeatVisibleSeconds = 0f;
         [HideInInspector] public int qrHeartbeatVisibleFrames = 6;
 
+        public bool movementTrackingEnabled = false;
+        public float movementMinPingDistance = 0.5f;
+        public float movementMinPingIntervalSeconds = 0.5f;
+        public float movementStartGraceSeconds = 0.05f;
+        public float movementStopGraceSeconds = 0.25f;
+        public float movementMinStep = 0.005f;
+
         internal const string ResourcesKey = "TestingFloorSettings";
 
         static TestingFloorSettings _current;
