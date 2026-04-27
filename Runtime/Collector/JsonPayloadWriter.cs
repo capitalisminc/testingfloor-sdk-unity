@@ -4,21 +4,101 @@ using UnityEngine;
 
 namespace TestingFloor.Internal {
     internal sealed class JsonPayloadWriter {
-        readonly TelemetryJsonWriter _writer = new();
+        // Collector enforces these caps. Mirrored here so the SDK can short-circuit
+        // before the request goes out and split a too-big batch into chunks.
+        public const int CollectorBodyByteCap = 1 << 20;   // 1 MB — collector handler.go:17
+        public const int CollectorEventByteCap = 32 << 10; // 32 KB — collector handler.go:19
+        // Reserve room inside the body cap for the envelope's closing bytes (`]}`)
+        // plus a comma per event. The exact accounting is done per-event but this
+        // gives the caller a default to subtract when picking a target body size.
+        public const int BodySafetyMargin = 8 << 10;       // 8 KB
 
-        public ReadOnlySpan<byte> Build(TelemetryEvent telemetryEvent, string writeKey, string fallbackSessionId) {
-            _writer.Reset();
-            WritePayload(_writer, telemetryEvent, writeKey, fallbackSessionId);
-            return _writer.WrittenSpan;
+        readonly TelemetryJsonWriter _main = new();
+        readonly TelemetryJsonWriter _scratch = new();
+
+        /// <summary>
+        /// Serialize a batch of telemetry events into a single /v1/batch payload. Events that
+        /// would push the request past <paramref name="maxBodyBytes"/> are left in the input
+        /// list unconsumed (the caller should send them in the next batch). Events whose own
+        /// serialized size exceeds <paramref name="maxEventBytes"/> are skipped with a warning
+        /// and counted toward <paramref name="consumed"/> so the caller dequeues them.
+        /// </summary>
+        /// <returns>UTF-8 JSON bytes of the request body. Caller must copy if it needs to
+        /// retain them past the next call to this writer.</returns>
+        public ReadOnlySpan<byte> BuildBatch(
+            IReadOnlyList<TelemetryEvent> events,
+            string writeKey,
+            string fallbackSessionId,
+            int maxBodyBytes,
+            int maxEventBytes,
+            TestingFloorSettings settingsForLogging,
+            out int consumed,
+            out int written) {
+            if (events == null || events.Count == 0) {
+                consumed = 0;
+                written = 0;
+                return ReadOnlySpan<byte>.Empty;
+            }
+
+            _main.Reset();
+            _main.WriteStartObject();
+            _main.WriteString("$write_key", writeKey);
+            _main.WriteString("$sent_at", DateTimeOffset.UtcNow);
+            _main.WritePropertyName("events");
+            _main.WriteStartArray();
+
+            // Closing `]}` plus a single comma between events; small fixed overhead.
+            const int ClosingFootprint = 2;
+
+            consumed = 0;
+            written = 0;
+            for (var i = 0; i < events.Count; i++) {
+                var ev = events[i];
+
+                _scratch.Reset();
+                try {
+                    WriteEventObject(_scratch, ev, fallbackSessionId);
+                }
+                catch (Exception ex) {
+                    // A single bad event (e.g. an unsupported property type that slipped past
+                    // the typed Set overloads via the dictionary) shouldn't poison the whole
+                    // batch. Drop it with a warning, count it as consumed, and keep going.
+                    if (settingsForLogging != null && settingsForLogging.logErrors) {
+                        Debug.LogWarning(
+                            $"[TestingFloor] Dropping event '{ev.EventType}': failed to serialize: {ex.Message}");
+                    }
+                    consumed++;
+                    continue;
+                }
+                var probe = _scratch.WrittenSpan;
+
+                if (probe.Length > maxEventBytes) {
+                    if (settingsForLogging != null && settingsForLogging.logErrors) {
+                        Debug.LogWarning(
+                            $"[TestingFloor] Dropping event '{ev.EventType}': serialized size {probe.Length} exceeds per-event cap {maxEventBytes}.");
+                    }
+                    consumed++;
+                    continue;
+                }
+
+                var commaCost = written > 0 ? 1 : 0;
+                var projected = _main.WrittenSpan.Length + commaCost + probe.Length + ClosingFootprint;
+                if (written > 0 && projected > maxBodyBytes) {
+                    // Leave this event (and the rest) for the next batch.
+                    break;
+                }
+
+                _main.WriteRawJsonValue(probe);
+                written++;
+                consumed++;
+            }
+
+            _main.WriteEndArray();
+            _main.WriteEndObject();
+            return _main.WrittenSpan;
         }
 
-        static void WritePayload(TelemetryJsonWriter writer, TelemetryEvent ev, string writeKey, string fallbackSessionId) {
-            writer.WriteStartObject();
-            writer.WriteString("$write_key", writeKey);
-            writer.WriteString("$sent_at", DateTimeOffset.UtcNow);
-
-            writer.WritePropertyName("events");
-            writer.WriteStartArray();
+        static void WriteEventObject(TelemetryJsonWriter writer, TelemetryEvent ev, string fallbackSessionId) {
             writer.WriteStartObject();
 
             writer.WriteString("$id", Guid.NewGuid());
@@ -39,8 +119,6 @@ namespace TestingFloor.Internal {
             WriteTestingFloorContext(writer, ev.Context, effectiveSessionId);
             WriteMergedProperties(writer, ev.Context.Properties, ev.EventProperties);
 
-            writer.WriteEndObject();
-            writer.WriteEndArray();
             writer.WriteEndObject();
         }
 

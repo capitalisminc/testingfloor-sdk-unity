@@ -114,7 +114,7 @@ You can also set `qrHeartbeatsEnabled` and `qrHeartbeatInverted` in `TestingFloo
 - `Track(...).Send()` is lightweight and queues events in memory.
 - Calling `.Set(...)` stores event properties; avoid large objects or per-frame spam.
 - Context providers run for every event, so keep them cheap.
-- Network work happens when the SDK flushes queued events.
+- Network work happens when the SDK flushes queued events. The sender bundles up to 50 events per HTTP request with a 0.25 s flush window. Tune `batchMaxEvents` and `batchMaxFlushIntervalSeconds` on the settings asset; set the interval to `0` to send each event in its own request.
 - The QR overlay is disabled by default. When enabled, it renders cheaply but regenerates the QR texture on its refresh interval.
 
 ## Common Calls

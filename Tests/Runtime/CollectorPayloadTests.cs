@@ -6,6 +6,22 @@ using UnityEngine;
 
 namespace TestingFloor.Tests {
     public class CollectorPayloadTests {
+        const int BodyCap = JsonPayloadWriter.CollectorBodyByteCap;
+        const int EventCap = JsonPayloadWriter.CollectorEventByteCap;
+
+        static string BuildSingle(JsonPayloadWriter writer, TelemetryEvent ev, string writeKey, string fallbackSessionId) {
+            var span = writer.BuildBatch(
+                new[] { ev },
+                writeKey,
+                fallbackSessionId,
+                BodyCap,
+                EventCap,
+                settingsForLogging: null,
+                out _,
+                out _);
+            return Encoding.UTF8.GetString(span.ToArray());
+        }
+
         [Test]
         public void PayloadContainsWriteKeyAndEventShape() {
             var writer = new JsonPayloadWriter();
@@ -23,8 +39,7 @@ namespace TestingFloor.Tests {
                 sessionId: "session-abc"
             );
 
-            var bytes = writer.Build(ev, "wk_test", fallbackSessionId: "fallback").ToArray();
-            var json = Encoding.UTF8.GetString(bytes);
+            var json = BuildSingle(writer, ev, "wk_test", fallbackSessionId: "fallback");
 
             StringAssert.Contains("\"$write_key\":\"wk_test\"", json);
             StringAssert.Contains("\"$name\":\"weapon_fire\"", json);
@@ -40,14 +55,12 @@ namespace TestingFloor.Tests {
         [Test]
         public void EventPropertyWinsOverContextOnCollision() {
             var writer = new JsonPayloadWriter();
-            var platform = GetPlatformContextForTesting();
-            var snapshot = ContextSnapshot.Create(platform);
+            var snapshot = ContextSnapshot.Create(GetPlatformContextForTesting());
             snapshot.Set("level.id", "from_context");
 
             var eventProps = new Dictionary<string, object> { ["level.id"] = "from_event" };
             var ev = new TelemetryEvent("t", eventProps, snapshot, "d", "u", 0, "s");
-            var bytes = writer.Build(ev, "wk", "fallback").ToArray();
-            var json = Encoding.UTF8.GetString(bytes);
+            var json = BuildSingle(writer, ev, "wk", "fallback");
 
             StringAssert.Contains("\"level.id\":\"from_event\"", json);
             StringAssert.DoesNotContain("\"level.id\":\"from_context\"", json);
@@ -58,8 +71,7 @@ namespace TestingFloor.Tests {
             var writer = new JsonPayloadWriter();
             var snapshot = ContextSnapshot.Create(GetPlatformContextForTesting());
             var ev = new TelemetryEvent("t", null, snapshot, "d", "u", 0, null);
-            var bytes = writer.Build(ev, "wk", "fallback-uuid").ToArray();
-            var json = Encoding.UTF8.GetString(bytes);
+            var json = BuildSingle(writer, ev, "wk", "fallback-uuid");
 
             StringAssert.Contains("\"$session_id\":\"fallback-uuid\"", json);
             StringAssert.Contains("\"session_id\":\"fallback-uuid\"", json);
@@ -74,8 +86,7 @@ namespace TestingFloor.Tests {
                 ["tags"] = new[] { "alpha", "beta" },
             };
             var ev = new TelemetryEvent("t", props, snapshot, "d", "u", 0, "s");
-            var bytes = writer.Build(ev, "wk", "fallback").ToArray();
-            var json = Encoding.UTF8.GetString(bytes);
+            var json = BuildSingle(writer, ev, "wk", "fallback");
 
             StringAssert.Contains("\"line\":\"hello \\\"quoted\\\"\\nnext\"", json);
             StringAssert.Contains("\"tags\":[\"alpha\",\"beta\"]", json);
@@ -94,8 +105,7 @@ namespace TestingFloor.Tests {
                 ["b_false"] = false,
             };
             var ev = new TelemetryEvent("t", props, snapshot, "d", "u", 0, "s");
-            var bytes = writer.Build(ev, "wk", "fallback").ToArray();
-            var json = Encoding.UTF8.GetString(bytes);
+            var json = BuildSingle(writer, ev, "wk", "fallback");
 
             StringAssert.Contains("\"i\":7", json);
             StringAssert.Contains("\"l\":9000000000", json);
@@ -112,28 +122,122 @@ namespace TestingFloor.Tests {
             var writer = new JsonPayloadWriter();
             var snapshot = ContextSnapshot.Create(GetPlatformContextForTesting());
             var id = System.Guid.Parse("11111111-2222-3333-4444-555555555555");
-            var props = new System.Collections.Generic.Dictionary<string, object> {
-                ["entity.id"] = id,
-            };
+            var props = new Dictionary<string, object> { ["entity.id"] = id };
             var ev = new TelemetryEvent("t", props, snapshot, "d", "u", 0, "s");
-            var bytes = writer.Build(ev, "wk", "fallback").ToArray();
-            var json = Encoding.UTF8.GetString(bytes);
+            var json = BuildSingle(writer, ev, "wk", "fallback");
 
             StringAssert.Contains("\"entity.id\":\"11111111-2222-3333-4444-555555555555\"", json);
         }
 
         [Test]
-        public void UnsupportedPropertyTypeThrows() {
+        public void UnsupportedPropertyTypeIsDroppedWithoutPoisoningTheBatch() {
+            // The typed Set overloads on EventBuilder/ContextSnapshot prevent unsupported
+            // types at the call site, but a developer who pokes the dictionary directly
+            // (or mutates it from a context provider) could still slip something through.
+            // The writer should drop just that event instead of failing the whole batch.
             var writer = new JsonPayloadWriter();
             var snapshot = ContextSnapshot.Create(GetPlatformContextForTesting());
-            var props = new Dictionary<string, object> { ["mood"] = System.DayOfWeek.Friday };
-            var ev = new TelemetryEvent("t", props, snapshot, "d", "u", 0, "s");
+            var bad = new TelemetryEvent(
+                "bad",
+                new Dictionary<string, object> { ["mood"] = System.DayOfWeek.Friday },
+                snapshot, "d", "u", 1000, "s");
+            var good = new TelemetryEvent(
+                "good",
+                new Dictionary<string, object> { ["k"] = "v" },
+                snapshot, "d", "u", 1001, "s");
 
-            Assert.Throws<System.InvalidOperationException>(() => writer.Build(ev, "wk", "fallback"));
+            var span = writer.BuildBatch(new[] { bad, good }, "wk", "fallback", BodyCap, EventCap, null, out var consumed, out var written);
+            var json = Encoding.UTF8.GetString(span.ToArray());
+
+            Assert.AreEqual(2, consumed, "both events must be dequeued — bad as a drop, good as a send");
+            Assert.AreEqual(1, written, "only the good event should land in the events array");
+            StringAssert.DoesNotContain("\"$name\":\"bad\"", json);
+            StringAssert.Contains("\"$name\":\"good\"", json);
+        }
+
+        [Test]
+        public void BatchWritesAllEventsInOrderInsideEventsArray() {
+            var writer = new JsonPayloadWriter();
+            var snapshot = ContextSnapshot.Create(GetPlatformContextForTesting());
+            var events = new TelemetryEvent[] {
+                new("first", new Dictionary<string, object> { ["seq"] = 1L }, snapshot, "d", "u", 1000, "s"),
+                new("second", new Dictionary<string, object> { ["seq"] = 2L }, snapshot, "d", "u", 1001, "s"),
+                new("third", new Dictionary<string, object> { ["seq"] = 3L }, snapshot, "d", "u", 1002, "s"),
+            };
+
+            var span = writer.BuildBatch(events, "wk", "fallback", BodyCap, EventCap, null, out var consumed, out var written);
+            var json = Encoding.UTF8.GetString(span.ToArray());
+
+            Assert.AreEqual(3, consumed);
+            Assert.AreEqual(3, written);
+            // Single $write_key, single events array, all three names present in source order.
+            StringAssert.Contains("\"events\":[", json);
+            var firstIdx = json.IndexOf("\"$name\":\"first\"", System.StringComparison.Ordinal);
+            var secondIdx = json.IndexOf("\"$name\":\"second\"", System.StringComparison.Ordinal);
+            var thirdIdx = json.IndexOf("\"$name\":\"third\"", System.StringComparison.Ordinal);
+            Assert.Greater(firstIdx, 0);
+            Assert.Greater(secondIdx, firstIdx);
+            Assert.Greater(thirdIdx, secondIdx);
+        }
+
+        [Test]
+        public void EmptyBatchReturnsEmptySpanAndZeroCounts() {
+            var writer = new JsonPayloadWriter();
+            var span = writer.BuildBatch(System.Array.Empty<TelemetryEvent>(), "wk", "fallback", BodyCap, EventCap, null, out var consumed, out var written);
+
+            Assert.AreEqual(0, consumed);
+            Assert.AreEqual(0, written);
+            Assert.AreEqual(0, span.Length);
+        }
+
+        [Test]
+        public void OversizedEventIsSkippedButCountedAsConsumed() {
+            var writer = new JsonPayloadWriter();
+            var snapshot = ContextSnapshot.Create(GetPlatformContextForTesting());
+            // Build a giant string property — well over the 32 KB per-event cap.
+            var giant = new string('x', EventCap + 1024);
+            var bigProps = new Dictionary<string, object> { ["payload"] = giant };
+            var smallProps = new Dictionary<string, object> { ["k"] = "v" };
+
+            var events = new TelemetryEvent[] {
+                new("too_big", bigProps, snapshot, "d", "u", 1000, "s"),
+                new("ok", smallProps, snapshot, "d", "u", 1001, "s"),
+            };
+
+            var span = writer.BuildBatch(events, "wk", "fallback", BodyCap, EventCap, null, out var consumed, out var written);
+            var json = Encoding.UTF8.GetString(span.ToArray());
+
+            Assert.AreEqual(2, consumed, "both events must be marked consumed so the queue advances");
+            Assert.AreEqual(1, written, "only the small event should land in the array");
+            StringAssert.DoesNotContain("\"too_big\"", json);
+            StringAssert.Contains("\"$name\":\"ok\"", json);
+        }
+
+        [Test]
+        public void BodyCapStopsBatchEarlyAndLeavesOverflowUnconsumed() {
+            var writer = new JsonPayloadWriter();
+            var snapshot = ContextSnapshot.Create(GetPlatformContextForTesting());
+            // Each event carries a ~4 KB payload; with a 12 KB body cap only ~2 fit.
+            var blob = new string('y', 4000);
+
+            var events = new TelemetryEvent[] {
+                new("a", new Dictionary<string, object> { ["payload"] = blob }, snapshot, "d", "u", 1000, "s"),
+                new("b", new Dictionary<string, object> { ["payload"] = blob }, snapshot, "d", "u", 1001, "s"),
+                new("c", new Dictionary<string, object> { ["payload"] = blob }, snapshot, "d", "u", 1002, "s"),
+                new("d", new Dictionary<string, object> { ["payload"] = blob }, snapshot, "d", "u", 1003, "s"),
+            };
+
+            const int tinyBody = 12 * 1024;
+            var span = writer.BuildBatch(events, "wk", "fallback", tinyBody, EventCap, null, out var consumed, out var written);
+            var json = Encoding.UTF8.GetString(span.ToArray());
+
+            Assert.Greater(written, 0, "first event must always go through (matches existing one-per-request behavior)");
+            Assert.Less(written, events.Length, "body cap must stop the batch before all events fit");
+            Assert.AreEqual(written, consumed, "body-cap drops do not skip events; they are deferred for the next batch");
+            Assert.LessOrEqual(json.Length, tinyBody, "actual payload stays under the body cap");
         }
 
         static PlatformContext GetPlatformContextForTesting() {
-            // Can be called from non-play tests — Application.platform is still safe.
             return PlatformContext.Capture();
         }
     }

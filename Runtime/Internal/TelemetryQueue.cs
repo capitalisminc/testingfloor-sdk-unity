@@ -9,6 +9,12 @@ namespace TestingFloor.Internal {
         const int InitialQueueCapacity = 32;
         const int MaxPooledDictionaries = 64;
         const int PooledDictionaryCapacity = 16;
+        const int DefaultBatchMaxEvents = 50;
+        const float DefaultBatchFlushIntervalSeconds = 0.25f;
+        // How long to wait between polls when filling a batch's flush window.
+        // Short enough that the window is honored within ~10ms, long enough that
+        // an idle sender doesn't burn CPU.
+        const int BatchFillPollMilliseconds = 10;
 
         static readonly object s_queueLock = new();
         static Queue<TelemetryEvent> _pendingEvents;
@@ -91,24 +97,69 @@ namespace TestingFloor.Internal {
         }
 
         static async Task RunSenderLoop(Func<CollectorClient> clientFactory, Action<SendResult> onResult, TestingFloorSettings settings) {
+            // Allocate the working batch list once for the lifetime of this sender.
+            // Reused for every batch — capacity grows to fit the largest one we see.
+            var batch = new List<TelemetryEvent>(GetMaxBatchEvents(settings));
+
             try {
                 while (true) {
-                    TelemetryEvent nextEvent;
+                    // Phase 1: exit if the queue is empty. New events flip _senderRunning back on.
                     lock (s_queueLock) {
                         if (_pendingEvents == null || _pendingEvents.Count == 0) {
                             _senderRunning = false;
                             _isSending = false;
                             return;
                         }
-                        nextEvent = _pendingEvents.Dequeue();
-                        _isSending = true;
                     }
 
+                    // Phase 2: fill the batch. Drain whatever's already queued, then optionally
+                    // wait up to flushIntervalSeconds for more events to bunch up.
+                    batch.Clear();
+                    var maxBatchEvents = GetMaxBatchEvents(settings);
+                    var flushIntervalSeconds = GetBatchFlushIntervalSeconds(settings);
+                    var deadline = DateTime.UtcNow.AddSeconds(flushIntervalSeconds);
+
+                    while (batch.Count < maxBatchEvents) {
+                        lock (s_queueLock) {
+                            while (batch.Count < maxBatchEvents && _pendingEvents.Count > 0) {
+                                batch.Add(_pendingEvents.Dequeue());
+                            }
+                            if (batch.Count > 0) {
+                                _isSending = true;
+                            }
+                        }
+                        if (batch.Count >= maxBatchEvents) break;
+                        if (flushIntervalSeconds <= 0f) break;
+                        if (DateTime.UtcNow >= deadline) break;
+                        await Task.Delay(BatchFillPollMilliseconds);
+                    }
+
+                    if (batch.Count == 0) continue; // nothing to send; loop back to Phase 1
+
+                    // Phase 3: send. CollectorClient.TrackBatchAsync internally enforces the
+                    // collector's per-event and body byte caps; if it can't fit everything in
+                    // one request, it reports back how many events were "consumed" (i.e., either
+                    // sent or dropped as oversized). Anything beyond that we have to put back at
+                    // the front of the queue so it's tried in the next iteration.
                     var client = clientFactory();
-                    var result = await SendSafelyAsync(client, nextEvent, settings);
-                    onResult?.Invoke(result);
-                    ReturnProperties(nextEvent.EventProperties);
-                    ReturnProperties(nextEvent.Context.Properties);
+                    var outcome = await SendSafelyAsync(client, batch, settings);
+
+                    var consumed = Math.Min(outcome.Consumed, batch.Count);
+                    if (consumed < 0) consumed = 0;
+
+                    onResult?.Invoke(outcome.Result);
+
+                    // Phase 4a: return pooled dicts for the events that left the queue for good.
+                    for (var i = 0; i < consumed; i++) {
+                        ReturnProperties(batch[i].EventProperties);
+                        ReturnProperties(batch[i].Context.Properties);
+                    }
+
+                    // Phase 4b: any unconsumed events go back at the head of the queue, in order,
+                    // so the next iteration tries them first.
+                    if (consumed < batch.Count) {
+                        RequeueAtFront(batch, consumed);
+                    }
 
                     lock (s_queueLock) {
                         _isSending = false;
@@ -126,16 +177,48 @@ namespace TestingFloor.Internal {
             }
         }
 
-        static async Task<SendResult> SendSafelyAsync(CollectorClient client, TelemetryEvent ev, TestingFloorSettings settings) {
+        static async Task<BatchSendOutcome> SendSafelyAsync(CollectorClient client, IReadOnlyList<TelemetryEvent> batch, TestingFloorSettings settings) {
             try {
-                return await client.TrackEventAsync(ev);
+                return await client.TrackBatchAsync(batch);
             }
             catch (Exception ex) {
                 if (settings != null && settings.logErrors) {
                     Debug.LogWarning($"[TestingFloor] Send failed: {ex}");
                 }
-                return SendResult.TransientFailure;
+                // Treat unhandled exceptions as if the whole batch was consumed so we don't
+                // wedge the queue retrying the same poison batch forever. Same drop semantics
+                // as the pre-batch implementation.
+                return new BatchSendOutcome(SendResult.TransientFailure, batch?.Count ?? 0);
             }
+        }
+
+        static void RequeueAtFront(List<TelemetryEvent> batch, int consumed) {
+            var leftover = batch.Count - consumed;
+            if (leftover <= 0) return;
+            lock (s_queueLock) {
+                _pendingEvents ??= new Queue<TelemetryEvent>(InitialQueueCapacity);
+                // Re-build the queue with the leftovers up front, followed by anything that
+                // arrived while we were sending. There's no Queue.Prepend, so swap into a
+                // fresh queue. Allocations here are bounded by batchMaxEvents + queue size.
+                var rebuilt = new Queue<TelemetryEvent>(leftover + _pendingEvents.Count);
+                for (var i = consumed; i < batch.Count; i++) {
+                    rebuilt.Enqueue(batch[i]);
+                }
+                while (_pendingEvents.Count > 0) {
+                    rebuilt.Enqueue(_pendingEvents.Dequeue());
+                }
+                _pendingEvents = rebuilt;
+            }
+        }
+
+        static int GetMaxBatchEvents(TestingFloorSettings settings) {
+            if (settings == null) return DefaultBatchMaxEvents;
+            return Math.Max(1, settings.batchMaxEvents);
+        }
+
+        static float GetBatchFlushIntervalSeconds(TestingFloorSettings settings) {
+            if (settings == null) return DefaultBatchFlushIntervalSeconds;
+            return Math.Max(0f, settings.batchMaxFlushIntervalSeconds);
         }
 
         static async Task WaitUntilIdle() {

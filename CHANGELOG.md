@@ -4,6 +4,10 @@ All notable changes to this package are documented here. Follows [Keep a Changel
 
 ## Unreleased
 
+### Changed
+
+- The runtime sender now bundles up to 50 events into a single `/v1/batch` request with a 0.25 s flush window (both tunable on the settings asset). Previously every queued event was its own HTTP POST, which got expensive once movement events started flowing. The collector wire format is unchanged — just more events per request. Per-event 32 KB and per-batch 1 MB collector caps are honored: oversized events are skipped with a warning, and any events that would push the body past the cap stay in the queue for the next batch.
+
 ### Added
 
 - `TestingFloor.SetPositionSource(...)` and `TestingFloor.SetCameraSource(...)` / `UseMainCamera()` register the player transform and camera so every event automatically carries `player.position.*`, `camera.position.*`, `camera.euler.*`, `camera.fov`, and `viewport.width`/`height`. Property keys match the names the Testing Floor heatmap and session viewer already consume.

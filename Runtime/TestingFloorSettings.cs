@@ -26,6 +26,9 @@ namespace TestingFloor {
         public float movementStopGraceSeconds = 0.25f;
         public float movementMinStep = 0.005f;
 
+        public int batchMaxEvents = 50;
+        public float batchMaxFlushIntervalSeconds = 0.25f;
+
         internal const string ResourcesKey = "TestingFloorSettings";
 
         static TestingFloorSettings _current;

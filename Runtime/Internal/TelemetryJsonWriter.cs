@@ -114,6 +114,17 @@ namespace TestingFloor.Internal {
             WriteInt64(value);
         }
 
+        /// <summary>
+        /// Splice a pre-built JSON value (object, array, number, string, bool, or null) into the
+        /// current container. The bytes must be exactly one complete JSON value with no leading
+        /// or trailing whitespace. Used by the batch payload writer to copy a per-event scratch
+        /// buffer into the events array without re-serializing properties.
+        /// </summary>
+        public void WriteRawJsonValue(ReadOnlySpan<byte> jsonBytes) {
+            BeforeValue();
+            WriteBytes(jsonBytes);
+        }
+
         void WriteInt64(long value) {
             BeforeValue();
             Span<byte> bytes = stackalloc byte[32];
