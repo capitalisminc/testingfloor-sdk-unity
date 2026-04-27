@@ -14,6 +14,8 @@ namespace TestingFloor {
         static TestingFloorSettings _settings;
         static CollectorClient _client;
         static ITelemetryContextProvider _contextProvider;
+        static Func<Vector3?> _positionSource;
+        static Func<Camera> _cameraSource;
         static PlatformContext _platformContext;
         static bool _platformContextCaptured;
         static bool _initialized;
@@ -28,6 +30,8 @@ namespace TestingFloor {
             _settings = null;
             _client = null;
             _contextProvider = null;
+            _positionSource = null;
+            _cameraSource = null;
             _platformContext = default;
             _platformContextCaptured = false;
             _initialized = false;
@@ -87,6 +91,75 @@ namespace TestingFloor {
         public static void RegisterContextProvider(ITelemetryContextProvider provider) {
             _contextProvider = provider;
         }
+
+        public static void SetPositionSource(Func<Vector3?> source) {
+            _positionSource = source;
+            MovementDriver.Apply();
+        }
+
+        public static void SetPositionSource(Transform transform) {
+            if (transform == null) {
+                ClearPositionSource();
+                return;
+            }
+            _positionSource = () => transform != null ? transform.position : (Vector3?)null;
+            MovementDriver.Apply();
+        }
+
+        public static void ClearPositionSource() {
+            _positionSource = null;
+            MovementDriver.Apply();
+        }
+
+        public static void SetCameraSource(Func<Camera> source) {
+            _cameraSource = source;
+        }
+
+        public static void UseMainCamera() {
+            _cameraSource = () => Camera.main;
+        }
+
+        public static void ClearCameraSource() {
+            _cameraSource = null;
+        }
+
+        public static void SetMovementTrackingEnabled(bool enabled) {
+            MovementDriver.SetEnabledOverride(enabled);
+        }
+
+        public static void UseConfiguredMovementTracking() {
+            MovementDriver.ClearEnabledOverride();
+        }
+
+        internal static Vector3? GetPlayerPosition() {
+            var src = _positionSource;
+            if (src == null) return null;
+            try {
+                return src();
+            }
+            catch (Exception ex) {
+                if (_settings != null && _settings.logErrors) {
+                    Debug.LogWarning($"[TestingFloor] Position source threw: {ex}");
+                }
+                return null;
+            }
+        }
+
+        internal static Camera GetCamera() {
+            var src = _cameraSource;
+            if (src == null) return null;
+            try {
+                return src();
+            }
+            catch (Exception ex) {
+                if (_settings != null && _settings.logErrors) {
+                    Debug.LogWarning($"[TestingFloor] Camera source threw: {ex}");
+                }
+                return null;
+            }
+        }
+
+        internal static bool HasPositionSource => _positionSource != null;
 
         public static void SetQrHeartbeatsEnabled(bool enabled) {
             QrHeartbeatDriver.SetEnabledOverride(enabled);
@@ -156,6 +229,14 @@ namespace TestingFloor {
                 _platformContextCaptured = true;
             }
             var snapshot = ContextSnapshot.Create(_platformContext);
+            try {
+                BuiltInContextProvider.Fill(ref snapshot);
+            }
+            catch (Exception ex) {
+                if (_settings != null && _settings.logErrors) {
+                    Debug.LogWarning($"[TestingFloor] Built-in context provider threw: {ex}");
+                }
+            }
             try {
                 _contextProvider?.FillSnapshot(ref snapshot);
             }
