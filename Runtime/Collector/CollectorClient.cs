@@ -35,7 +35,7 @@ namespace TestingFloor.Internal {
             var sessionId = TestingFloorSession.EffectiveSessionId;
             // Reserve room for the envelope and gzip headroom inside the collector's body cap.
             var maxBodyBytes = JsonPayloadWriter.CollectorBodyByteCap - JsonPayloadWriter.BodySafetyMargin;
-            var span = _writer.BuildBatch(
+            var bytes = _writer.BuildBatch(
                 events,
                 _settings.writeKey,
                 sessionId,
@@ -50,8 +50,6 @@ namespace TestingFloor.Internal {
                 // them but treat the (non-)send as a Success — there's nothing to retry.
                 return new BatchSendOutcome(SendResult.Success, consumed);
             }
-
-            var bytes = span.ToArray();
 
             using var request = new UnityWebRequest(BuildEndpoint(), UnityWebRequest.kHttpVerbPOST);
             request.uploadHandler = new UploadHandlerRaw(bytes);

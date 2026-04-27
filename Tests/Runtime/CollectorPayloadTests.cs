@@ -10,7 +10,7 @@ namespace TestingFloor.Tests {
         const int EventCap = JsonPayloadWriter.CollectorEventByteCap;
 
         static string BuildSingle(JsonPayloadWriter writer, TelemetryEvent ev, string writeKey, string fallbackSessionId) {
-            var span = writer.BuildBatch(
+            var bytes = writer.BuildBatch(
                 new[] { ev },
                 writeKey,
                 fallbackSessionId,
@@ -19,7 +19,7 @@ namespace TestingFloor.Tests {
                 settingsForLogging: null,
                 out _,
                 out _);
-            return Encoding.UTF8.GetString(span.ToArray());
+            return Encoding.UTF8.GetString(bytes);
         }
 
         [Test]
@@ -146,8 +146,8 @@ namespace TestingFloor.Tests {
                 new Dictionary<string, object> { ["k"] = "v" },
                 snapshot, "d", "u", 1001, "s");
 
-            var span = writer.BuildBatch(new[] { bad, good }, "wk", "fallback", BodyCap, EventCap, null, out var consumed, out var written);
-            var json = Encoding.UTF8.GetString(span.ToArray());
+            var bytes = writer.BuildBatch(new[] { bad, good }, "wk", "fallback", BodyCap, EventCap, null, out var consumed, out var written);
+            var json = Encoding.UTF8.GetString(bytes);
 
             Assert.AreEqual(2, consumed, "both events must be dequeued — bad as a drop, good as a send");
             Assert.AreEqual(1, written, "only the good event should land in the events array");
@@ -165,8 +165,8 @@ namespace TestingFloor.Tests {
                 new("third", new Dictionary<string, object> { ["seq"] = 3L }, snapshot, "d", "u", 1002, "s"),
             };
 
-            var span = writer.BuildBatch(events, "wk", "fallback", BodyCap, EventCap, null, out var consumed, out var written);
-            var json = Encoding.UTF8.GetString(span.ToArray());
+            var bytes = writer.BuildBatch(events, "wk", "fallback", BodyCap, EventCap, null, out var consumed, out var written);
+            var json = Encoding.UTF8.GetString(bytes);
 
             Assert.AreEqual(3, consumed);
             Assert.AreEqual(3, written);
@@ -181,13 +181,13 @@ namespace TestingFloor.Tests {
         }
 
         [Test]
-        public void EmptyBatchReturnsEmptySpanAndZeroCounts() {
+        public void EmptyBatchReturnsEmptyArrayAndZeroCounts() {
             var writer = new JsonPayloadWriter();
-            var span = writer.BuildBatch(System.Array.Empty<TelemetryEvent>(), "wk", "fallback", BodyCap, EventCap, null, out var consumed, out var written);
+            var bytes = writer.BuildBatch(System.Array.Empty<TelemetryEvent>(), "wk", "fallback", BodyCap, EventCap, null, out var consumed, out var written);
 
             Assert.AreEqual(0, consumed);
             Assert.AreEqual(0, written);
-            Assert.AreEqual(0, span.Length);
+            Assert.AreEqual(0, bytes.Length);
         }
 
         [Test]
@@ -204,8 +204,8 @@ namespace TestingFloor.Tests {
                 new("ok", smallProps, snapshot, "d", "u", 1001, "s"),
             };
 
-            var span = writer.BuildBatch(events, "wk", "fallback", BodyCap, EventCap, null, out var consumed, out var written);
-            var json = Encoding.UTF8.GetString(span.ToArray());
+            var bytes = writer.BuildBatch(events, "wk", "fallback", BodyCap, EventCap, null, out var consumed, out var written);
+            var json = Encoding.UTF8.GetString(bytes);
 
             Assert.AreEqual(2, consumed, "both events must be marked consumed so the queue advances");
             Assert.AreEqual(1, written, "only the small event should land in the array");
@@ -228,8 +228,8 @@ namespace TestingFloor.Tests {
             };
 
             const int tinyBody = 12 * 1024;
-            var span = writer.BuildBatch(events, "wk", "fallback", tinyBody, EventCap, null, out var consumed, out var written);
-            var json = Encoding.UTF8.GetString(span.ToArray());
+            var bytes = writer.BuildBatch(events, "wk", "fallback", tinyBody, EventCap, null, out var consumed, out var written);
+            var json = Encoding.UTF8.GetString(bytes);
 
             Assert.Greater(written, 0, "first event must always go through (matches existing one-per-request behavior)");
             Assert.Less(written, events.Length, "body cap must stop the batch before all events fit");

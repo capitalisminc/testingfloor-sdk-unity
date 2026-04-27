@@ -23,9 +23,10 @@ namespace TestingFloor.Internal {
         /// serialized size exceeds <paramref name="maxEventBytes"/> are skipped with a warning
         /// and counted toward <paramref name="consumed"/> so the caller dequeues them.
         /// </summary>
-        /// <returns>UTF-8 JSON bytes of the request body. Caller must copy if it needs to
-        /// retain them past the next call to this writer.</returns>
-        public ReadOnlySpan<byte> BuildBatch(
+        /// <returns>UTF-8 JSON bytes of the request body, or an empty array if no events were
+        /// written. Returned as <c>byte[]</c> (rather than <c>ReadOnlySpan&lt;byte&gt;</c>) so the
+        /// async caller can safely hold the result across an <c>await</c>.</returns>
+        public byte[] BuildBatch(
             IReadOnlyList<TelemetryEvent> events,
             string writeKey,
             string fallbackSessionId,
@@ -37,7 +38,7 @@ namespace TestingFloor.Internal {
             if (events == null || events.Count == 0) {
                 consumed = 0;
                 written = 0;
-                return ReadOnlySpan<byte>.Empty;
+                return Array.Empty<byte>();
             }
 
             _main.Reset();
@@ -95,7 +96,7 @@ namespace TestingFloor.Internal {
 
             _main.WriteEndArray();
             _main.WriteEndObject();
-            return _main.WrittenSpan;
+            return _main.WrittenSpan.ToArray();
         }
 
         static void WriteEventObject(TelemetryJsonWriter writer, TelemetryEvent ev, string fallbackSessionId) {
