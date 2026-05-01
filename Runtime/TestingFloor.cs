@@ -48,7 +48,7 @@ namespace TestingFloor {
             if (_sessionStartSent) return;
             _sessionStartSent = true;
             if (TestingFloorSession.Current != null) {
-                Track("tf_session_start").Send();
+                Track("$tf_session_start").Send();
             }
         }
 
@@ -306,7 +306,7 @@ namespace TestingFloor {
             if (_sessionEndSent) return;
             if (TestingFloorSession.Current == null) return;
             _sessionEndSent = true;
-            Track("tf_session_end").Send();
+            Track("$tf_session_end").Send();
         }
     }
 }

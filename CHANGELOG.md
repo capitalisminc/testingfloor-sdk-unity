@@ -6,6 +6,7 @@ All notable changes to this package are documented here. Follows [Keep a Changel
 
 ### Changed
 
+- Session bookend events are now emitted as `$tf_session_start` / `$tf_session_end` (with the `$tf_` prefix) to match the platform-reserved namespace defined in [`docs/dollar-fields.md`](https://github.com/capitalisminc/testingfloor-collector/blob/main/docs/dollar-fields.md) — same convention the desktop recorder uses for `$tf_recording_started` / `_ended` / `_paused` / `_resumed`. Previous releases emitted these without the dollar; the Testing Floor backend recognizes both names so historical telemetry continues to register as complete.
 - The runtime sender now bundles up to 50 events into a single `/v1/batch` request with a 0.25 s flush window (both tunable on the settings asset). Previously every queued event was its own HTTP POST, which got expensive once movement events started flowing. The collector wire format is unchanged — just more events per request. Per-event 32 KB and per-batch 1 MB collector caps are honored: oversized events are skipped with a warning, and any events that would push the body past the cap stay in the queue for the next batch.
 
 ### Added
