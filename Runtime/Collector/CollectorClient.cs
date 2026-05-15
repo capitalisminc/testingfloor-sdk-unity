@@ -32,7 +32,7 @@ namespace TestingFloor.Internal {
             if (string.IsNullOrWhiteSpace(_settings.writeKey)) return new BatchSendOutcome(SendResult.FatalConfiguration, events.Count);
             if (string.IsNullOrWhiteSpace(_settings.endpoint)) return new BatchSendOutcome(SendResult.FatalConfiguration, events.Count);
 
-            var sessionId = TestingFloorSession.EffectiveSessionId;
+            var sessionId = TestingFloor.PlaySessionId;
             // Reserve room for the envelope and gzip headroom inside the collector's body cap.
             var maxBodyBytes = JsonPayloadWriter.CollectorBodyByteCap - JsonPayloadWriter.BodySafetyMargin;
             var bytes = _writer.BuildBatch(

@@ -114,16 +114,16 @@ namespace TestingFloor.Internal {
                 writer.WriteString("$device_id", ev.DeviceId);
             }
 
-            var effectiveSessionId = !string.IsNullOrWhiteSpace(ev.SessionId) ? ev.SessionId : fallbackSessionId;
-            writer.WriteString("$session_id", effectiveSessionId);
+            var effectivePlaySessionId = !string.IsNullOrWhiteSpace(ev.SessionId) ? ev.SessionId : fallbackSessionId;
+            writer.WriteString("$session_id", effectivePlaySessionId);
 
-            WriteTestingFloorContext(writer, ev.Context, effectiveSessionId);
+            WriteTestingFloorContext(writer, ev.Context);
             WriteMergedProperties(writer, ev.Context.Properties, ev.EventProperties);
 
             writer.WriteEndObject();
         }
 
-        static void WriteTestingFloorContext(TelemetryJsonWriter writer, ContextSnapshot context, string effectiveSessionId) {
+        static void WriteTestingFloorContext(TelemetryJsonWriter writer, ContextSnapshot context) {
             var p = context.Platform;
             writer.WritePropertyName("$tf");
             writer.WriteStartObject();
@@ -138,11 +138,15 @@ namespace TestingFloor.Internal {
             if (p.ScreenHeight > 0) writer.WriteNumber("screen_height", p.ScreenHeight);
             WriteString(writer, "locale", p.Locale);
 
-            WriteString(writer, "session_id", effectiveSessionId);
-            var session = TestingFloorSession.Current;
-            if (session != null) {
-                if (session.PlaytestId.HasValue) {
-                    writer.WriteNumber("playtest_id", session.PlaytestId.Value);
+            // The recording context is only present when this Play session was
+            // launched by the Testing Floor desktop recorder. The server uses
+            // tf.recording_uuid to group all Play sessions belonging to a
+            // single recording. Outside a recording these fields are omitted.
+            var recording = TestingFloorRecording.Current;
+            if (recording != null) {
+                WriteString(writer, "recording_uuid", recording.RecordingUuid);
+                if (recording.PlaytestId.HasValue) {
+                    writer.WriteNumber("playtest_id", recording.PlaytestId.Value);
                 }
             }
             writer.WriteEndObject();

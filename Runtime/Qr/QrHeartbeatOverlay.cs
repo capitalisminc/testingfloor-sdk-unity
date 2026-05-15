@@ -73,7 +73,7 @@ namespace TestingFloor {
         bool Fire(bool inverted) {
             var unixMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
             var sequence = _sequence + 1;
-            var payload = QrHeartbeatPayload.Build(TestingFloorSession.EffectiveSessionId, unixMs, sequence);
+            var payload = QrHeartbeatPayload.Build(TestingFloor.PlaySessionId, unixMs, sequence);
             try {
                 var matrix = QrEncoder.Encode(payload);
                 if (_texture != null) Destroy(_texture);
