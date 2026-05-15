@@ -73,8 +73,27 @@ namespace TestingFloor.Tests {
             var ev = new TelemetryEvent("t", null, snapshot, "d", "u", 0, null);
             var json = BuildSingle(writer, ev, "wk", "fallback-uuid");
 
+            // The top-level $session_id is the SDK's per-Play session id; when
+            // the event itself has none (very early flush), the writer's
+            // fallback fills it in.
             StringAssert.Contains("\"$session_id\":\"fallback-uuid\"", json);
-            StringAssert.Contains("\"session_id\":\"fallback-uuid\"", json);
+        }
+
+        [Test]
+        public void TfContextOmitsRecordingFieldsWhenNoActiveRecording() {
+            // Without an active TestingFloorRecording, the $tf block should not
+            // contain recording_uuid or playtest_id at all — those are
+            // recording-context fields, not Play-session ones.
+            var writer = new JsonPayloadWriter();
+            var snapshot = ContextSnapshot.Create(GetPlatformContextForTesting());
+            var ev = new TelemetryEvent("t", null, snapshot, "d", "u", 0, "play-sess");
+            var json = BuildSingle(writer, ev, "wk", "fallback");
+
+            StringAssert.Contains("\"$tf\":{", json);
+            StringAssert.DoesNotContain("\"recording_uuid\"", json);
+            StringAssert.DoesNotContain("\"playtest_id\"", json);
+            // The retired tf.session_id field must not be reintroduced.
+            StringAssert.DoesNotContain("\"session_id\":", json);
         }
 
         [Test]

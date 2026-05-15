@@ -21,9 +21,8 @@ namespace TestingFloor {
         static bool _initialized;
         static bool _forceDisabled;
         static TelemetryState _state;
-        static bool _sessionStartSent;
-        static bool _sessionEndSent;
         static bool _quittingHandlerRegistered;
+        static string _playSessionId;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         static void ResetStatics() {
@@ -37,19 +36,17 @@ namespace TestingFloor {
             _initialized = false;
             _forceDisabled = false;
             _state = TelemetryState.NotConfigured;
-            _sessionStartSent = false;
-            _sessionEndSent = false;
             _quittingHandlerRegistered = false;
+            // PlaySessionId rotates per Play boot — the SubsystemRegistration
+            // hook fires on every entry into Play (and in standalone builds at
+            // startup), so resetting here is what makes Play stop+restart
+            // produce a fresh analytics.session_id.
+            _playSessionId = null;
         }
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
         static void OnBeforeSceneLoad() {
             RegisterQuitHandler();
-            if (_sessionStartSent) return;
-            _sessionStartSent = true;
-            if (TestingFloorSession.Current != null) {
-                Track("$tf_session_start").Send();
-            }
         }
 
         static void RegisterQuitHandler() {
@@ -68,7 +65,10 @@ namespace TestingFloor {
 
         static void OnEditorPlayModeStateChanged(PlayModeStateChange state) {
             if (state != PlayModeStateChange.ExitingPlayMode) return;
-            TrySendSessionEnd();
+            // Drain pending events before the editor tears down the runtime.
+            // The next Play start will get a fresh PlaySessionId (via
+            // ResetStatics) so any late events from this Play that didn't make
+            // it out are lost — that's intentional.
             _ = FlushAsync(TimeSpan.FromSeconds(QuitFlushTimeoutSeconds));
         }
 #endif
@@ -192,7 +192,26 @@ namespace TestingFloor {
 
         public static string ProfileId => Identity.ProfileId;
 
-        public static TestingFloorSession Session => TestingFloorSession.Current;
+        /// <summary>
+        /// The active Testing Floor recording, if the game was launched by the
+        /// desktop recorder. Stable across Play stop+restart for the lifetime
+        /// of a single recording.
+        /// </summary>
+        public static TestingFloorRecording Recording => TestingFloorRecording.Current;
+
+        /// <summary>
+        /// The SDK's per-Play session id. Rotates on every Play boot (cold
+        /// start, editor Play stop+restart, standalone relaunch). Lazily
+        /// generated; safe to read at any time.
+        /// </summary>
+        public static string PlaySessionId {
+            get {
+                if (string.IsNullOrWhiteSpace(_playSessionId)) {
+                    _playSessionId = Guid.NewGuid().ToString();
+                }
+                return _playSessionId;
+            }
+        }
 
         internal static void TrackEventInternal(string eventType, Dictionary<string, object> eventProperties) {
             EnsureInitialized();
@@ -208,7 +227,6 @@ namespace TestingFloor {
             var context = BuildContext();
             var timestampMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
             var userId = !string.IsNullOrWhiteSpace(Identity.ProfileId) ? Identity.ProfileId : null;
-            var sessionId = TestingFloorSession.Current?.SessionId;
 
             var ev = new TelemetryEvent(
                 eventType: eventType,
@@ -217,7 +235,7 @@ namespace TestingFloor {
                 deviceId: Identity.DeviceId,
                 userId: userId,
                 timestampMs: timestampMs,
-                sessionId: sessionId
+                sessionId: PlaySessionId
             );
 
             TelemetryQueue.Enqueue(ev, _settings, GetClient, ApplySendResult);
@@ -297,16 +315,8 @@ namespace TestingFloor {
         }
 
         static void OnApplicationQuitting() {
-            TrySendSessionEnd();
             if (!TelemetryQueue.HasPending()) return;
             _ = FlushAsync(TimeSpan.FromSeconds(QuitFlushTimeoutSeconds));
-        }
-
-        static void TrySendSessionEnd() {
-            if (_sessionEndSent) return;
-            if (TestingFloorSession.Current == null) return;
-            _sessionEndSent = true;
-            Track("$tf_session_end").Send();
         }
     }
 }

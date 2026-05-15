@@ -4,9 +4,15 @@ All notable changes to this package are documented here. Follows [Keep a Changel
 
 ## Unreleased
 
-### Changed
+### Changed (breaking)
 
-- Session bookend events are now emitted as `$tf_session_start` / `$tf_session_end` (with the `$tf_` prefix) to match the platform-reserved namespace defined in [`docs/dollar-fields.md`](https://github.com/capitalisminc/testingfloor-collector/blob/main/docs/dollar-fields.md) — same convention the desktop recorder uses for `$tf_recording_started` / `_ended` / `_paused` / `_resumed`. Previous releases emitted these without the dollar; the Testing Floor backend recognizes both names so historical telemetry continues to register as complete.
+- Recording context and SDK Play sessions are now distinct concepts. A recording (the desktop recorder's capture span) can contain many Play sessions (Editor stop+restart, domain reload, scene reload), and every event emitted while a recording is active carries `tf.recording_uuid` while still rotating its own `analytics.session_id` per Play. Renames:
+  - `TestingFloorSession` → `TestingFloorRecording`; field `SessionId` → `RecordingUuid`. Public accessor `TestingFloor.Session` → `TestingFloor.Recording`.
+  - New `TestingFloor.PlaySessionId` for the SDK's per-Play session id (rotates per Play boot, lazily generated, also used as the QR overlay `s=` payload).
+  - `--testing-floor={"session_id":"..."}` launch arg → `--testing-floor={"recording_uuid":"..."}`.
+  - `Library/TestingFloor/session-payload.json` sidecar → `recording-payload.json`. The SDK now re-reads the sidecar on every Play start (and editor domain reload) and does **not** delete it on read; the recorder owns the file's lifetime.
+  - Event property `tf.session_id` → `tf.recording_uuid`. `tf.recording_uuid` is only present on events emitted while a recording is active.
+- Session bookend events (`$tf_session_start` / `$tf_session_end`) are no longer emitted. The SDK's `analytics.session_id` rotating per Play is the boundary — there is nothing to bracket. The recorder still emits `$tf_recording_started` / `$tf_recording_ended` for the recording itself.
 - The runtime sender now bundles up to 50 events into a single `/v1/batch` request with a 0.25 s flush window (both tunable on the settings asset). Previously every queued event was its own HTTP POST, which got expensive once movement events started flowing. The collector wire format is unchanged — just more events per request. Per-event 32 KB and per-batch 1 MB collector caps are honored: oversized events are skipped with a warning, and any events that would push the body past the cap stay in the queue for the next batch.
 
 ### Added
