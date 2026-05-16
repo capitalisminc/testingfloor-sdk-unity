@@ -25,6 +25,12 @@ namespace TestingFloor {
         public float movementStartGraceSeconds = 0.05f;
         public float movementStopGraceSeconds = 0.25f;
         public float movementMinStep = 0.005f;
+        public float movementMinPingRotationDegrees = 5f;
+        public float movementMinStepRotationDegrees = 0.1f;
+        public float movementMinPingFovDegrees = 2f;
+        public float movementMinStepFovDegrees = 0.05f;
+        public float movementMinPingCameraDistance = 0.5f;
+        public float movementMinStepCameraDistance = 0.005f;
 
         public int batchMaxEvents = 50;
         public float batchMaxFlushIntervalSeconds = 0.25f;

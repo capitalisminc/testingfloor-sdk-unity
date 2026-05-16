@@ -20,6 +20,12 @@ namespace TestingFloor.Editor {
         SerializedProperty _movementStartGraceSeconds;
         SerializedProperty _movementStopGraceSeconds;
         SerializedProperty _movementMinStep;
+        SerializedProperty _movementMinPingRotationDegrees;
+        SerializedProperty _movementMinStepRotationDegrees;
+        SerializedProperty _movementMinPingFovDegrees;
+        SerializedProperty _movementMinStepFovDegrees;
+        SerializedProperty _movementMinPingCameraDistance;
+        SerializedProperty _movementMinStepCameraDistance;
         SerializedProperty _batchMaxEvents;
         SerializedProperty _batchMaxFlushIntervalSeconds;
         bool _showAdvancedQrTiming;
@@ -43,6 +49,12 @@ namespace TestingFloor.Editor {
             _movementStartGraceSeconds = serializedObject.FindProperty("movementStartGraceSeconds");
             _movementStopGraceSeconds = serializedObject.FindProperty("movementStopGraceSeconds");
             _movementMinStep = serializedObject.FindProperty("movementMinStep");
+            _movementMinPingRotationDegrees = serializedObject.FindProperty("movementMinPingRotationDegrees");
+            _movementMinStepRotationDegrees = serializedObject.FindProperty("movementMinStepRotationDegrees");
+            _movementMinPingFovDegrees = serializedObject.FindProperty("movementMinPingFovDegrees");
+            _movementMinStepFovDegrees = serializedObject.FindProperty("movementMinStepFovDegrees");
+            _movementMinPingCameraDistance = serializedObject.FindProperty("movementMinPingCameraDistance");
+            _movementMinStepCameraDistance = serializedObject.FindProperty("movementMinStepCameraDistance");
             _batchMaxEvents = serializedObject.FindProperty("batchMaxEvents");
             _batchMaxFlushIntervalSeconds = serializedObject.FindProperty("batchMaxFlushIntervalSeconds");
         }
@@ -111,18 +123,18 @@ namespace TestingFloor.Editor {
             EditorGUILayout.LabelField("Movement Tracking", EditorStyles.boldLabel);
             EditorGUILayout.PropertyField(
                 _movementEnabled,
-                new GUIContent("Enabled", "Emit a debounced tf_player_moved event when the registered position source moves. Requires TestingFloor.SetPositionSource(...) at runtime.")
+                new GUIContent("Enabled", "Emit a debounced player_moved event when the player position or registered camera moves (position, rotation, or FOV). Requires TestingFloor.SetPositionSource(...) at runtime; camera signals are picked up from TestingFloor.SetCameraSource(...) / UseMainCamera() when set.")
             );
             using (new EditorGUI.DisabledScope(!_movementEnabled.boolValue)) {
                 _showAdvancedMovementTuning = EditorGUILayout.Foldout(_showAdvancedMovementTuning, "Advanced Tuning", true);
                 if (_showAdvancedMovementTuning) {
                     EditorGUILayout.HelpBox(
-                        "Defaults are tuned for a humanoid character on a 1-unit-per-meter scale. Tune if your project uses a different scale.",
+                        "Defaults are tuned for a humanoid character on a 1-unit-per-meter scale, with mouselook-style camera rotation. Tune if your project uses a different scale or camera style.",
                         MessageType.Info
                     );
                     EditorGUILayout.PropertyField(
                         _movementMinPingDistance,
-                        new GUIContent("Min Ping Distance", "Accumulated distance required between ping events.")
+                        new GUIContent("Min Ping Distance", "Accumulated player-position distance required to fire a ping event.")
                     );
                     EditorGUILayout.PropertyField(
                         _movementMinPingIntervalSeconds,
@@ -130,15 +142,39 @@ namespace TestingFloor.Editor {
                     );
                     EditorGUILayout.PropertyField(
                         _movementStartGraceSeconds,
-                        new GUIContent("Start Grace (s)", "How long sustained motion is required before a 'start' event fires.")
+                        new GUIContent("Start Grace (s)", "How long sustained activity is required before a 'start' event fires.")
                     );
                     EditorGUILayout.PropertyField(
                         _movementStopGraceSeconds,
-                        new GUIContent("Stop Grace (s)", "How long stillness is required before a 'stop' event fires.")
+                        new GUIContent("Stop Grace (s)", "How long stillness across every tracked signal is required before a 'stop' event fires.")
                     );
                     EditorGUILayout.PropertyField(
                         _movementMinStep,
-                        new GUIContent("Min Step", "Per-frame movement smaller than this is treated as jitter and ignored.")
+                        new GUIContent("Min Step (position)", "Per-frame player-position movement smaller than this is treated as jitter and ignored.")
+                    );
+                    EditorGUILayout.PropertyField(
+                        _movementMinPingRotationDegrees,
+                        new GUIContent("Min Ping Rotation (°)", "Accumulated camera rotation (degrees) required to fire a ping event.")
+                    );
+                    EditorGUILayout.PropertyField(
+                        _movementMinStepRotationDegrees,
+                        new GUIContent("Min Step Rotation (°)", "Per-frame camera rotation smaller than this is treated as jitter and ignored.")
+                    );
+                    EditorGUILayout.PropertyField(
+                        _movementMinPingFovDegrees,
+                        new GUIContent("Min Ping FOV (°)", "Accumulated camera FOV change (degrees) required to fire a ping event.")
+                    );
+                    EditorGUILayout.PropertyField(
+                        _movementMinStepFovDegrees,
+                        new GUIContent("Min Step FOV (°)", "Per-frame camera FOV change smaller than this is treated as jitter and ignored.")
+                    );
+                    EditorGUILayout.PropertyField(
+                        _movementMinPingCameraDistance,
+                        new GUIContent("Min Ping Camera Distance", "Accumulated camera world-position distance required to fire a ping event.")
+                    );
+                    EditorGUILayout.PropertyField(
+                        _movementMinStepCameraDistance,
+                        new GUIContent("Min Step Camera Distance", "Per-frame camera world-position movement smaller than this is treated as jitter and ignored.")
                     );
                 }
             }
