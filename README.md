@@ -83,6 +83,25 @@ Defaults are tuned for a 1-unit-per-meter humanoid character at roughly 2 path s
 
 You can also flip `movementTrackingEnabled` on the settings asset to make the project's default opt-in. `TestingFloor.UseConfiguredMovementTracking()` reverts the runtime override back to the asset's value.
 
+## Teleports
+
+Wrap teleports so Testing Floor draws them as discontinuities instead of interpolating across the jump:
+
+```csharp
+using var teleport = TestingFloor.BeginTeleport("respawn");
+await MovePlayerAsync(destination);
+```
+
+For one-frame teleports, call `RecordTeleport` after the move if you already know both endpoints:
+
+```csharp
+var start = player.transform.position;
+player.transform.position = destination;
+TestingFloor.RecordTeleport(start, destination, "debug_warp");
+```
+
+The SDK emits one `player_teleported` event at completion with `teleport.start.position.{x,y,z}`, `teleport.end.position.{x,y,z}`, `teleport.duration`, and `teleport.distance`. While a teleport scope is active, built-in `player_moved` sampling is suspended and then reset at the destination so the next movement segment starts cleanly.
+
 ## Recording Sync
 
 If testers record with OBS, browser capture, or another external recorder, enable the visible sync QR before recording starts:
@@ -125,6 +144,7 @@ await TestingFloor.FlushAsync(TimeSpan.FromSeconds(2));
 TestingFloor.SetPositionSource(playerTransform);
 TestingFloor.UseMainCamera();
 TestingFloor.SetMovementTrackingEnabled(true);
+using var teleport = TestingFloor.BeginTeleport();
 
 TestingFloor.SetQrHeartbeatsEnabled(true);
 TestingFloor.SetQrHeartbeatsEnabled(false);

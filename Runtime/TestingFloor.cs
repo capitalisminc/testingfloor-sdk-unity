@@ -131,6 +131,14 @@ namespace TestingFloor {
             MovementDriver.ClearEnabledOverride();
         }
 
+        public static TeleportScope BeginTeleport(string reason = null) {
+            return TeleportTracker.Begin(reason);
+        }
+
+        public static void RecordTeleport(Vector3 start, Vector3 end, string reason = null, double durationSeconds = 0.0) {
+            TeleportTracker.Record(start, end, reason, durationSeconds);
+        }
+
         internal static Vector3? GetPlayerPosition() {
             var src = _positionSource;
             if (src == null) return null;

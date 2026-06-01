@@ -27,7 +27,14 @@ namespace TestingFloor {
 
         void Update() {
             ConfigureFromSettings();
+            if (TeleportTracker.IsTeleporting) {
+                _sampler.Reset();
+                return;
+            }
             var sample = BuildSample();
+            if (TeleportTracker.ConsumeMovementResetRequested()) {
+                _sampler.Reset();
+            }
             _sampler.Step(Time.unscaledTime, sample, _emit);
         }
 
