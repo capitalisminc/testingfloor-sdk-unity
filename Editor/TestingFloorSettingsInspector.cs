@@ -11,6 +11,7 @@ namespace TestingFloor.Editor {
         SerializedProperty _writeKey;
         SerializedProperty _endpoint;
         SerializedProperty _qrEnabled;
+        SerializedProperty _qrEnabledWithRecorderSession;
         SerializedProperty _qrInverted;
         SerializedProperty _qrInterval;
         SerializedProperty _qrVisibleSeconds;
@@ -40,6 +41,7 @@ namespace TestingFloor.Editor {
             _writeKey = serializedObject.FindProperty("writeKey");
             _endpoint = serializedObject.FindProperty("endpoint");
             _qrEnabled = serializedObject.FindProperty("qrHeartbeatsEnabled");
+            _qrEnabledWithRecorderSession = serializedObject.FindProperty("qrHeartbeatsEnabledWithRecorderSession");
             _qrInverted = serializedObject.FindProperty("qrHeartbeatInverted");
             _qrInterval = serializedObject.FindProperty("qrHeartbeatIntervalSeconds");
             _qrVisibleSeconds = serializedObject.FindProperty("qrHeartbeatVisibleSeconds");
@@ -79,7 +81,11 @@ namespace TestingFloor.Editor {
             EditorGUILayout.Space();
             EditorGUILayout.LabelField("QR Heartbeat", EditorStyles.boldLabel);
             EditorGUILayout.PropertyField(_qrEnabled);
-            using (new EditorGUI.DisabledScope(!_qrEnabled.boolValue)) {
+            EditorGUILayout.PropertyField(
+                _qrEnabledWithRecorderSession,
+                new GUIContent("Force With Recorder Session", "Normally hidden when the Testing Floor recorder passes a session id. Enable this to show the QR overlay during recorder-launched sessions even when normal QR heartbeats are off. The --forceqr launch argument also shows it.")
+            );
+            using (new EditorGUI.DisabledScope(!_qrEnabled.boolValue && !_qrEnabledWithRecorderSession.boolValue)) {
                 EditorGUILayout.PropertyField(
                     _qrInverted,
                     new GUIContent("Inverted", "White modules on a black background. Disable for the normal black-on-white QR style.")

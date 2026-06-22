@@ -116,7 +116,7 @@ Turn it off when the recording flow ends:
 TestingFloor.SetQrHeartbeatsEnabled(false);
 ```
 
-The QR appears in the top-right of the game view and helps Testing Floor line up the video with telemetry. If testers use the Testing Floor recorder, you usually do not need to enable it manually.
+The QR appears in the top-right of the game view and helps Testing Floor line up the video with telemetry. If testers use the Testing Floor recorder, you usually do not need to enable it manually. When the recorder passes a session id with `--testing-floor`, the SDK hides QR heartbeats by default because the recorder can sync from that session handoff.
 
 When enabled, the QR changes every 15 seconds by default. Timing controls exist for unusual capture setups, but most projects should leave them alone.
 
@@ -126,7 +126,7 @@ The QR is inverted by default. Use normal black-on-white rendering if your recor
 TestingFloor.SetQrHeartbeatInverted(false);
 ```
 
-You can also set `qrHeartbeatsEnabled` and `qrHeartbeatInverted` in `TestingFloorSettings` for builds where the QR should always follow the asset setting.
+You can also set `qrHeartbeatsEnabled`, `qrHeartbeatsEnabledWithRecorderSession`, and `qrHeartbeatInverted` in `TestingFloorSettings` for builds where the QR should follow the asset setting. `qrHeartbeatsEnabledWithRecorderSession` shows the QR during recorder-launched sessions even when normal QR heartbeats are off; pass `--forceqr` at launch to force the QR in any session.
 
 ## Performance
 
@@ -159,7 +159,7 @@ TestingFloor.UseConfiguredQrHeartbeatColors();
 
 QR heartbeat timing is an advanced sync setting. The default interval is 15 seconds, and tuning it is not usually recommended unless Testing Floor support asks you to adjust it.
 
-Testing Floor launchers can pass session data with `--testing-floor={json}` or `{projectRoot}/Library/TestingFloor/session-payload.json`.
+Testing Floor launchers can pass session data with `--testing-floor={json}` or `{projectRoot}/Library/TestingFloor/session-payload.json`. The payload may contain `session_id` from the desktop recorder or `recording_uuid` from older integrations.
 
 For local SDK development, add this to `Packages/manifest.json`:
 

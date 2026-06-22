@@ -13,14 +13,18 @@ namespace TestingFloor {
     /// </summary>
     public sealed class TestingFloorRecording {
         public string RecordingUuid { get; }
+        public string SessionId { get; }
         public long? PlaytestId { get; }
 
-        internal TestingFloorRecording(string recordingUuid, long? playtestId) {
+        internal TestingFloorRecording(string recordingUuid, string sessionId, long? playtestId) {
             RecordingUuid = recordingUuid;
+            SessionId = sessionId;
             PlaytestId = playtestId;
         }
 
         const string CliPrefix = "--testing-floor=";
+        const string SessionPayloadFileName = "session-payload.json";
+        const string RecordingPayloadFileName = "recording-payload.json";
         const int MaxPayloadAgeHours = 12;
 
         static bool _resolved;
@@ -45,6 +49,8 @@ namespace TestingFloor {
             }
         }
 
+        internal static bool HasRecorderSession => Current != null;
+
         static TestingFloorRecording ResolveFromArgs() {
             var args = Environment.GetCommandLineArgs();
             for (var i = 0; i < args.Length; i++) {
@@ -52,9 +58,7 @@ namespace TestingFloor {
                 if (!arg.StartsWith(CliPrefix, StringComparison.Ordinal)) continue;
                 var json = arg.Substring(CliPrefix.Length);
                 try {
-                    var payload = JsonUtility.FromJson<Payload>(json);
-                    if (payload == null || string.IsNullOrWhiteSpace(payload.recording_uuid)) return null;
-                    return new TestingFloorRecording(payload.recording_uuid, PayloadPlaytestId(payload));
+                    return ParsePayload(json, "--testing-floor JSON");
                 }
                 catch (Exception e) {
                     Debug.LogWarning($"[TestingFloor] Failed to parse --testing-floor JSON: {e.Message}");
@@ -65,51 +69,78 @@ namespace TestingFloor {
         }
 
         static TestingFloorRecording ResolveFromSidecar() {
-            var path = GetSidecarPath();
-            if (string.IsNullOrWhiteSpace(path)) return null;
+            var paths = GetSidecarPaths();
+            if (paths == null || paths.Length == 0) return null;
 
-            try {
-                if (!File.Exists(path)) return null;
+            for (var i = 0; i < paths.Length; i++) {
+                var path = paths[i];
+                if (string.IsNullOrWhiteSpace(path) || !File.Exists(path)) continue;
 
-                var json = File.ReadAllText(path);
-                var payload = JsonUtility.FromJson<Payload>(json);
-                if (payload == null || string.IsNullOrWhiteSpace(payload.recording_uuid)) {
-                    Debug.LogWarning("[TestingFloor] Sidecar payload missing recording_uuid; ignoring.");
-                    return null;
+                try {
+                    var json = File.ReadAllText(path);
+                    var recording = ParsePayload(json, "sidecar payload");
+                    if (recording == null) continue;
+
+                    // Intentionally NOT deleting the file. The recorder owns the
+                    // file's lifetime and clears it when the recording stops.
+                    // Keeping it lets every Play boot during this recording
+                    // resolve the same recorder context.
+                    return recording;
                 }
-
-                if (payload.created_at_unix_ms > 0) {
-                    var ageMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() - payload.created_at_unix_ms;
-                    if (ageMs > TimeSpan.FromHours(MaxPayloadAgeHours).TotalMilliseconds) {
-                        // Stale payload — recorder probably crashed or moved on.
-                        // Don't link Play events to a recording that's no longer
-                        // active; the recorder will rewrite the file when it
-                        // starts a new recording.
-                        Debug.LogWarning("[TestingFloor] Sidecar payload is stale (>12h); ignoring.");
-                        return null;
-                    }
+                catch (Exception e) {
+                    Debug.LogWarning($"[TestingFloor] Failed to parse sidecar payload '{path}': {e.Message}");
                 }
+            }
 
-                // Intentionally NOT deleting the file. The recorder owns the
-                // file's lifetime and clears it when the recording stops.
-                // Keeping it lets every Play boot during this recording
-                // resolve the same recording_uuid.
-                return new TestingFloorRecording(payload.recording_uuid, PayloadPlaytestId(payload));
-            }
-            catch (Exception e) {
-                Debug.LogWarning($"[TestingFloor] Failed to parse sidecar payload: {e.Message}");
-                return null;
-            }
+            return null;
         }
 
-        static string GetSidecarPath() {
+        internal static TestingFloorRecording ParsePayloadForTesting(string json) {
+            return ParsePayload(json, "test payload");
+        }
+
+        static TestingFloorRecording ParsePayload(string json, string label) {
+            var payload = JsonUtility.FromJson<Payload>(json);
+            if (payload == null) return null;
+
+            var sessionId = Normalized(payload.session_id);
+            var recordingUuid = Normalized(payload.recording_uuid) ?? sessionId;
+            if (string.IsNullOrWhiteSpace(recordingUuid) && string.IsNullOrWhiteSpace(sessionId)) {
+                Debug.LogWarning($"[TestingFloor] {label} missing session_id/recording_uuid; ignoring.");
+                return null;
+            }
+
+            if (payload.created_at_unix_ms > 0) {
+                var ageMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() - payload.created_at_unix_ms;
+                if (ageMs > TimeSpan.FromHours(MaxPayloadAgeHours).TotalMilliseconds) {
+                    // Stale payload — recorder probably crashed or moved on.
+                    // Don't link Play events to a recording that's no longer
+                    // active; the recorder will rewrite the file when it
+                    // starts a new recording.
+                    Debug.LogWarning($"[TestingFloor] {label} is stale (>12h); ignoring.");
+                    return null;
+                }
+            }
+
+            return new TestingFloorRecording(recordingUuid, sessionId, PayloadPlaytestId(payload));
+        }
+
+        static string[] GetSidecarPaths() {
             try {
                 var projectRoot = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
-                return Path.Combine(projectRoot, "Library", "TestingFloor", "recording-payload.json");
+                var dir = Path.Combine(projectRoot, "Library", "TestingFloor");
+                return new[] {
+                    Path.Combine(dir, SessionPayloadFileName),
+                    Path.Combine(dir, RecordingPayloadFileName),
+                };
             }
             catch {
                 return null;
             }
+        }
+
+        static string Normalized(string value) {
+            return string.IsNullOrWhiteSpace(value) ? null : value;
         }
 
         static long? PayloadPlaytestId(Payload payload) {
@@ -118,6 +149,7 @@ namespace TestingFloor {
 
         [Serializable]
         sealed class Payload {
+            public string session_id;
             public string recording_uuid;
             public long playtest_id;
             public long created_at_unix_ms;

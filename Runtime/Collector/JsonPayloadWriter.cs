@@ -141,10 +141,13 @@ namespace TestingFloor.Internal {
             // The recording context is only present when this Play session was
             // launched by the Testing Floor desktop recorder. The server uses
             // tf.recording_uuid to group all Play sessions belonging to a
-            // single recording. Outside a recording these fields are omitted.
+            // single recording and tf.session_id to link recorder-launched
+            // games that received the companion's client session id directly.
+            // Outside a recording these fields are omitted.
             var recording = TestingFloorRecording.Current;
             if (recording != null) {
                 WriteString(writer, "recording_uuid", recording.RecordingUuid);
+                WriteString(writer, "session_id", recording.SessionId);
                 if (recording.PlaytestId.HasValue) {
                     writer.WriteNumber("playtest_id", recording.PlaytestId.Value);
                 }
