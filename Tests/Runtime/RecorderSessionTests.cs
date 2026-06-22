@@ -12,6 +12,16 @@ namespace TestingFloor.Tests {
             Assert.AreEqual("session-123", recording.SessionId);
             Assert.AreEqual("session-123", recording.RecordingUuid);
             Assert.AreEqual(42, recording.PlaytestId);
+            Assert.IsTrue(recording.SuppressQr);
+        }
+
+        [Test]
+        public void RecorderSessionPayloadCanKeepQrVisible() {
+            var recording = TestingFloorRecording.ParsePayloadForTesting(
+                "{\"schema\":1,\"session_id\":\"session-123\",\"playtest_id\":42,\"suppress_qr\":false}");
+
+            Assert.NotNull(recording);
+            Assert.IsFalse(recording.SuppressQr);
         }
 
         [Test]
@@ -40,17 +50,17 @@ namespace TestingFloor.Tests {
             try {
                 settings.qrHeartbeatsEnabled = true;
 
-                Assert.IsTrue(QrHeartbeatDriver.EffectiveEnabledFor(settings, hasRecorderSession: false, forceQrArgument: false));
-                Assert.IsFalse(QrHeartbeatDriver.EffectiveEnabledFor(settings, hasRecorderSession: true, forceQrArgument: false));
+                Assert.IsTrue(QrHeartbeatDriver.EffectiveEnabledFor(settings, suppressQr: false, forceQrArgument: false));
+                Assert.IsFalse(QrHeartbeatDriver.EffectiveEnabledFor(settings, suppressQr: true, forceQrArgument: false));
 
                 settings.qrHeartbeatsEnabledWithRecorderSession = true;
 
-                Assert.IsTrue(QrHeartbeatDriver.EffectiveEnabledFor(settings, hasRecorderSession: true, forceQrArgument: false));
+                Assert.IsTrue(QrHeartbeatDriver.EffectiveEnabledFor(settings, suppressQr: true, forceQrArgument: false));
 
                 settings.qrHeartbeatsEnabled = false;
 
-                Assert.IsTrue(QrHeartbeatDriver.EffectiveEnabledFor(settings, hasRecorderSession: true, forceQrArgument: false));
-                Assert.IsFalse(QrHeartbeatDriver.EffectiveEnabledFor(settings, hasRecorderSession: false, forceQrArgument: false));
+                Assert.IsTrue(QrHeartbeatDriver.EffectiveEnabledFor(settings, suppressQr: true, forceQrArgument: false));
+                Assert.IsFalse(QrHeartbeatDriver.EffectiveEnabledFor(settings, suppressQr: false, forceQrArgument: false));
             }
             finally {
                 Object.DestroyImmediate(settings);
@@ -64,7 +74,7 @@ namespace TestingFloor.Tests {
             try {
                 settings.qrHeartbeatsEnabled = false;
 
-                Assert.IsTrue(QrHeartbeatDriver.EffectiveEnabledFor(settings, hasRecorderSession: true, forceQrArgument: true));
+                Assert.IsTrue(QrHeartbeatDriver.EffectiveEnabledFor(settings, suppressQr: true, forceQrArgument: true));
                 Assert.IsTrue(QrHeartbeatDriver.IsForceQrArgument("--forceqr"));
                 Assert.IsTrue(QrHeartbeatDriver.IsForceQrArgument("--FORCEQR"));
                 Assert.IsFalse(QrHeartbeatDriver.IsForceQrArgument("--force-qr"));

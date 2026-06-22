@@ -116,7 +116,7 @@ Turn it off when the recording flow ends:
 TestingFloor.SetQrHeartbeatsEnabled(false);
 ```
 
-The QR appears in the top-right of the game view and helps Testing Floor line up the video with telemetry. If testers use the Testing Floor recorder, you usually do not need to enable it manually. When the recorder passes a session id with `--testing-floor`, the SDK hides QR heartbeats by default because the recorder can sync from that session handoff.
+The QR appears in the top-right of the game view and helps Testing Floor line up the video with telemetry. If testers use the Testing Floor recorder, you usually do not need to enable it manually. When the recorder passes a session handoff for an active capture, the SDK hides QR heartbeats by default because the recorder can sync from that handoff.
 
 When enabled, the QR changes every 15 seconds by default. Timing controls exist for unusual capture setups, but most projects should leave them alone.
 
@@ -159,7 +159,7 @@ TestingFloor.UseConfiguredQrHeartbeatColors();
 
 QR heartbeat timing is an advanced sync setting. The default interval is 15 seconds, and tuning it is not usually recommended unless Testing Floor support asks you to adjust it.
 
-Testing Floor launchers can pass session data with `--testing-floor={json}` or `{projectRoot}/Library/TestingFloor/session-payload.json`. The payload may contain `session_id` from the desktop recorder or `recording_uuid` from older integrations.
+Testing Floor launchers can pass session data with `--testing-floor={json}` or `{projectRoot}/Library/TestingFloor/session-payload.json`. The payload may contain `session_id` from the desktop recorder or `recording_uuid` from older integrations. Add `"suppress_qr": false` for launches that should keep the QR visible even though a session handoff id is present, such as Play without recording.
 
 For local SDK development, add this to `Packages/manifest.json`:
 

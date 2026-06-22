@@ -29,7 +29,7 @@ namespace TestingFloor {
             get {
                 if (_enabledOverride.HasValue) return _enabledOverride.Value;
                 var settings = TestingFloorSettings.Current;
-                return EffectiveEnabledFor(settings, TestingFloorRecording.HasRecorderSession, ForceQrArgumentPresent);
+                return EffectiveEnabledFor(settings, TestingFloorRecording.SuppressesQr, ForceQrArgumentPresent);
             }
         }
 
@@ -51,12 +51,12 @@ namespace TestingFloor {
             Apply();
         }
 
-        internal static bool EffectiveEnabledFor(TestingFloorSettings settings, bool hasRecorderSession, bool forceQrArgument) {
+        internal static bool EffectiveEnabledFor(TestingFloorSettings settings, bool suppressQr, bool forceQrArgument) {
             if (forceQrArgument) return true;
             if (settings == null) return false;
-            if (hasRecorderSession && settings.qrHeartbeatsEnabledWithRecorderSession) return true;
+            if (suppressQr && settings.qrHeartbeatsEnabledWithRecorderSession) return true;
             if (!settings.qrHeartbeatsEnabled) return false;
-            if (hasRecorderSession) return false;
+            if (suppressQr) return false;
             return true;
         }
 

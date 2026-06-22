@@ -22,7 +22,7 @@ All notable changes to this package are documented here. Follows [Keep a Changel
 - Runtime QR heartbeat opt-in/out API via `TestingFloor.SetQrHeartbeatsEnabled(...)`.
 - Runtime QR heartbeat color override via `TestingFloor.SetQrHeartbeatInverted(...)`.
 - Documented telemetry QR payload format: `tfqr://sync/v1?s=<session_id>&t=<unix_ms>&q=<sequence>`.
-- QR heartbeats are hidden by default while a desktop-recorder session id is active. Enable `qrHeartbeatsEnabledWithRecorderSession` in settings to force QR during recorder-launched sessions, or pass `--forceqr` to force QR in any session.
+- QR heartbeats are hidden by default while a desktop-recorder handoff asks to suppress QR. Launchers can pass `suppress_qr: false` to keep QR visible for tracked-but-not-recorded launches. Enable `qrHeartbeatsEnabledWithRecorderSession` in settings to force QR during recorder-launched sessions, or pass `--forceqr` to force QR in any session.
 - Low-allocation telemetry JSON writer for the runtime send path.
 
 ### Changed

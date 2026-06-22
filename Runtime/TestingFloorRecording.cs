@@ -15,11 +15,13 @@ namespace TestingFloor {
         public string RecordingUuid { get; }
         public string SessionId { get; }
         public long? PlaytestId { get; }
+        public bool SuppressQr { get; }
 
-        internal TestingFloorRecording(string recordingUuid, string sessionId, long? playtestId) {
+        internal TestingFloorRecording(string recordingUuid, string sessionId, long? playtestId, bool suppressQr) {
             RecordingUuid = recordingUuid;
             SessionId = sessionId;
             PlaytestId = playtestId;
+            SuppressQr = suppressQr;
         }
 
         const string CliPrefix = "--testing-floor=";
@@ -50,6 +52,7 @@ namespace TestingFloor {
         }
 
         internal static bool HasRecorderSession => Current != null;
+        internal static bool SuppressesQr => Current != null && Current.SuppressQr;
 
         static TestingFloorRecording ResolveFromArgs() {
             var args = Environment.GetCommandLineArgs();
@@ -122,7 +125,7 @@ namespace TestingFloor {
                 }
             }
 
-            return new TestingFloorRecording(recordingUuid, sessionId, PayloadPlaytestId(payload));
+            return new TestingFloorRecording(recordingUuid, sessionId, PayloadPlaytestId(payload), PayloadSuppressQr(json, payload));
         }
 
         static string[] GetSidecarPaths() {
@@ -147,6 +150,10 @@ namespace TestingFloor {
             return payload.playtest_id > 0 ? payload.playtest_id : null;
         }
 
+        static bool PayloadSuppressQr(string json, Payload payload) {
+            return json.IndexOf("\"suppress_qr\"", StringComparison.Ordinal) < 0 || payload.suppress_qr;
+        }
+
         [Serializable]
         sealed class Payload {
             public string session_id;
@@ -155,6 +162,7 @@ namespace TestingFloor {
             public long created_at_unix_ms;
             public int schema;
             public string source;
+            public bool suppress_qr;
         }
     }
 }
