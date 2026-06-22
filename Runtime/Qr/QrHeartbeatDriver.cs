@@ -87,7 +87,7 @@ namespace TestingFloor {
             if (settings == null) return;
 
             var go = new GameObject("[TestingFloor.QrHeartbeat]");
-            Object.DontDestroyOnLoad(go);
+            UnityEngine.Object.DontDestroyOnLoad(go);
             go.AddComponent<QrHeartbeatOverlay>();
             _overlayGo = go;
         }
@@ -95,10 +95,10 @@ namespace TestingFloor {
         static void DestroyOverlay() {
             if (_overlayGo == null) return;
             if (Application.isPlaying) {
-                Object.Destroy(_overlayGo);
+                UnityEngine.Object.Destroy(_overlayGo);
             }
             else {
-                Object.DestroyImmediate(_overlayGo);
+                UnityEngine.Object.DestroyImmediate(_overlayGo);
             }
             _overlayGo = null;
         }
