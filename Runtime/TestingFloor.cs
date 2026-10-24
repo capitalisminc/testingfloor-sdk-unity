@@ -40,7 +40,7 @@ namespace TestingFloor {
             // PlaySessionId rotates per Play boot — the SubsystemRegistration
             // hook fires on every entry into Play (and in standalone builds at
             // startup), so resetting here is what makes Play stop+restart
-            // produce a fresh analytics.session_id.
+            // produce a fresh $session_id.
             _playSessionId = null;
         }
 
@@ -196,9 +196,30 @@ namespace TestingFloor {
 
         public static bool QrHeartbeatInverted => QrHeartbeatDriver.EffectiveInverted;
 
+        /// <summary>
+        /// A random id the SDK creates on first launch and keeps in
+        /// <c>PlayerPrefs</c>. Sent on every event as <c>$device_id</c>.
+        /// Testing Floor shows it as the Player ID only when an event has no
+        /// <see cref="ProfileId"/>.
+        /// </summary>
         public static string DeviceId => Identity.DeviceId;
 
+        /// <summary>
+        /// A random id the SDK creates on first use and keeps in
+        /// <c>{Application.persistentDataPath}/synced/profile_id</c>. Sent on
+        /// every event as <c>$user_id</c>; Testing Floor shows it as the
+        /// Player ID. Null if the SDK can't read or write that file.
+        /// </summary>
         public static string ProfileId => Identity.ProfileId;
+
+        /// <summary>
+        /// The Player ID that Testing Floor shows for this player:
+        /// <see cref="ProfileId"/>, or <see cref="DeviceId"/> when there is no
+        /// profile id. Show it to testers (for example on a feedback screen)
+        /// so you can assign it to the right tester in Testing Floor. Not a
+        /// separate field on the wire.
+        /// </summary>
+        public static string PlayerId => Identity.PlayerId;
 
         /// <summary>
         /// The active Testing Floor recording, if the game was launched by the
@@ -208,9 +229,11 @@ namespace TestingFloor {
         public static TestingFloorRecording Recording => TestingFloorRecording.Current;
 
         /// <summary>
-        /// The SDK's per-Play session id. Rotates on every Play boot (cold
-        /// start, editor Play stop+restart, standalone relaunch). Lazily
-        /// generated; safe to read at any time.
+        /// The SDK's per-Play session id, sent on every event as
+        /// <c>$session_id</c>. Testing Floor shows each one as a run. Rotates
+        /// on every Play boot (cold start, editor Play stop+restart,
+        /// standalone relaunch), so one recording can contain several runs.
+        /// Lazily generated; safe to read at any time.
         /// </summary>
         public static string PlaySessionId {
             get {

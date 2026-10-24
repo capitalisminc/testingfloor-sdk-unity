@@ -32,6 +32,14 @@ namespace TestingFloor.Internal {
             }
         }
 
+        public static string PlayerId => ResolvePlayerId(ProfileId, DeviceId);
+
+        // Mirrors how Testing Floor picks the Player ID for an event: the
+        // `$user_id` when present, else the `$device_id`.
+        internal static string ResolvePlayerId(string profileId, string deviceId) {
+            return !string.IsNullOrWhiteSpace(profileId) ? profileId : deviceId;
+        }
+
         static string GetOrCreateDeviceId() {
             var value = PlayerPrefs.GetString(DeviceIdKey, string.Empty);
             if (string.IsNullOrWhiteSpace(value)) {
