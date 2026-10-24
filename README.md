@@ -48,6 +48,28 @@ public static class TestingFloorBootstrap {
 }
 ```
 
+## Player ID and Runs
+
+The SDK creates these ids itself and attaches them to every event, so you don't set an identity in code.
+
+| On the wire | SDK property | In Testing Floor |
+| --- | --- | --- |
+| `$user_id` | `TestingFloor.ProfileId` | Player ID |
+| `$device_id` | `TestingFloor.DeviceId` | Player ID, only when the event has no `$user_id` |
+| `$session_id` | `TestingFloor.PlaySessionId` | Run |
+
+- `ProfileId` is a random id kept in `{Application.persistentDataPath}/synced/profile_id`. It stays the same across launches on one machine. To keep one Player ID for a player across machines, include that file in your cloud save sync.
+- `DeviceId` is a random id kept in `PlayerPrefs`. Testing Floor uses it as the Player ID only when `ProfileId` is missing, for example when the SDK can't write the profile file.
+- `PlaySessionId` changes on every launch and every time you enter Play Mode in the Editor. Each value is one run in Testing Floor. A recording from the Testing Floor recorder can span several runs, for example when you stop and restart Play Mode.
+
+`TestingFloor.PlayerId` returns the Player ID that Testing Floor shows for this player. Put it on a feedback or debug screen so testers can tell you their ID, then assign that ID to the tester in Testing Floor. Their runs then show under their name.
+
+```csharp
+playerIdLabel.text = $"Player ID: {TestingFloor.PlayerId}";
+```
+
+Older Testing Floor setup pages called the Player ID the "analytics ID" and showed an `analytics_id` field. That field doesn't exist. The Player ID always comes from `$user_id`, or from `$device_id` when there is no `$user_id`.
+
 ## Player & Camera Context
 
 Hand the SDK a player transform and a camera, and every event will automatically carry position, camera pose, camera FOV, and viewport size — no per-call wiring:
@@ -141,6 +163,8 @@ You can also set `qrHeartbeatsEnabled`, `qrHeartbeatsEnabledWithRecorderSession`
 ```csharp
 await TestingFloor.FlushAsync(TimeSpan.FromSeconds(2));
 
+var playerId = TestingFloor.PlayerId;
+
 TestingFloor.SetPositionSource(playerTransform);
 TestingFloor.UseMainCamera();
 TestingFloor.SetMovementTrackingEnabled(true);
@@ -159,7 +183,7 @@ TestingFloor.UseConfiguredQrHeartbeatColors();
 
 QR heartbeat timing is an advanced sync setting. The default interval is 15 seconds, and tuning it is not usually recommended unless Testing Floor support asks you to adjust it.
 
-Testing Floor launchers can pass session data with `--testing-floor={json}` or `{projectRoot}/Library/TestingFloor/session-payload.json`. The payload may contain `session_id` from the desktop recorder or `recording_uuid` from older integrations. Add `"suppress_qr": false` for launches that should keep the QR visible even though a session handoff id is present, such as Play without recording.
+Testing Floor launchers can pass session data with `--testing-floor={json}` or `{projectRoot}/Library/TestingFloor/session-payload.json`. The payload may contain `session_id` from the desktop recorder or `recording_uuid` from older integrations. That `session_id` comes from the recorder and links the recording. It isn't the run's `$session_id`: each run still gets its own from `TestingFloor.PlaySessionId`. Add `"suppress_qr": false` for launches that should keep the QR visible even though a session handoff id is present, such as Play without recording.
 
 For local SDK development, add this to `Packages/manifest.json`:
 
