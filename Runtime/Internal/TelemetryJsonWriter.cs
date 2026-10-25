@@ -3,7 +3,7 @@ using System.Buffers;
 using System.Buffers.Text;
 using System.Text;
 
-namespace TestingFloor.Internal {
+namespace TestingFloorSdk.Internal {
     internal sealed class TelemetryJsonWriter {
         readonly ArrayBufferWriter<byte> _buffer = new(4096);
         Frame[] _frames = new Frame[8];

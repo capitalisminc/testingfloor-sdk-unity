@@ -1,6 +1,6 @@
 {
     "name": "TestingFloor.Editor",
-    "rootNamespace": "TestingFloor.Editor",
+    "rootNamespace": "TestingFloorSdk.Editor",
     "references": [
         "TestingFloor.Runtime"
     ],

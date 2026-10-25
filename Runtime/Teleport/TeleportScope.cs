@@ -1,6 +1,6 @@
 using System;
 
-namespace TestingFloor {
+namespace TestingFloorSdk {
     public sealed class TeleportScope : IDisposable {
         readonly int _id;
         bool _cancelled;

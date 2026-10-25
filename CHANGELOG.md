@@ -1,46 +1,26 @@
 # Changelog
 
-All notable changes to this package are documented here. Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [SemVer](https://semver.org/).
-
-## Unreleased
+## 0.2.0 — Unreleased
 
 ### Changed (breaking)
 
-- Recording context and SDK Play sessions are now distinct concepts. A recording (the desktop recorder's capture span) can contain many Play sessions (Editor stop+restart, domain reload, scene reload), and every event emitted while a recording is active carries `tf.recording_uuid` while still rotating its own `$session_id` per Play. Renames:
-  - `TestingFloorSession` → `TestingFloorRecording`; the recording identity is now `RecordingUuid`. Public accessor `TestingFloor.Session` → `TestingFloor.Recording`. `TestingFloorRecording.SessionId` is present only when the desktop recorder supplied its client session id.
-  - New `TestingFloor.PlaySessionId` for the SDK's per-Play session id (rotates per Play boot, lazily generated, also used as the QR overlay `s=` payload).
-  - `--testing-floor={"recording_uuid":"..."}` and `Library/TestingFloor/recording-payload.json` are the recording-identity forms. The SDK still accepts the desktop recorder's `--testing-floor={"session_id":"..."}` launch arg and `Library/TestingFloor/session-payload.json` sidecar for compatibility. The SDK now re-reads sidecars on every Play start (and editor domain reload) and does **not** delete them on read; the recorder owns the file's lifetime.
-  - Event property `tf.session_id` → `tf.recording_uuid` for recording identity. When the desktop recorder supplies a client session id, the SDK also writes `tf_context.session_id` so companion sync can link the recording without scanning QR markers.
-- Session bookend events (`$tf_session_start` / `$tf_session_end`) are no longer emitted. The SDK's `$session_id` rotating per Play is the boundary — there is nothing to bracket. The recorder still emits `$tf_recording_started` / `$tf_recording_ended` for the recording itself.
-- The runtime sender now bundles up to 50 events into a single `/v1/batch` request with a 0.25 s flush window (both tunable on the settings asset). Previously every queued event was its own HTTP POST, which got expensive once movement events started flowing. The collector wire format is unchanged — just more events per request. Per-event 32 KB and per-batch 1 MB collector caps are honored: oversized events are skipped with a warning, and any events that would push the body past the cap stay in the queue for the next batch.
+- The C# namespace is now `TestingFloorSdk`. Update imports to `using TestingFloorSdk;` so `TestingFloor.Track(...)` resolves directly. No old namespace alias is retained.
+
+- Canonical recorder handoffs require `recording_uuid`; removed recorder-session aliases and the old sidecar filename.
+- Play-session identity is distinct from recording identity, with no automatic session bookend events.
+- Typed properties reserve `$` keys, omit nonfinite values, and capture arrays by value.
+- Both SDKs use a bounded 4,096-event queue including requests in flight, drop newest on overflow, and retain transient failures for ordered retry.
+- Automated engine tests cannot enable live collection or forced QR markers.
+
+- Event builders are single-use; `Send()` returns queue acceptance. Transport events, send outcomes, and platform serialization details are internal.
+- Removed the unused frame-count QR setting. Camera-only movement and camera FOV-axis/forward metadata now match the shared contract.
 
 ### Added
 
-- `TestingFloor.PlayerId` returns the Player ID that Testing Floor shows for this player: `ProfileId` (sent as `$user_id`), or `DeviceId` (sent as `$device_id`) when there is no profile id. It's read-only and adds nothing to the wire.
-- Teleport discontinuity API: `TestingFloor.BeginTeleport(...)` wraps async teleports, and `TestingFloor.RecordTeleport(...)` records one-frame teleports. The SDK emits `player_teleported` with start/end/duration/distance metadata and resets built-in movement sampling at the destination.
-- `TestingFloor.SetPositionSource(...)` and `TestingFloor.SetCameraSource(...)` / `UseMainCamera()` register the player transform and camera so every event automatically carries `player.position.*`, `camera.position.*`, `camera.euler.*`, `camera.fov`, and `viewport.width`/`height`. Property keys match the names the Testing Floor heatmap and session viewer already consume.
-- Built-in debounced `player_moved` event with `movement.reason` of `start` / `stop` / `ping`. The activity detector treats the player as moving when **any** of player position, camera world position, camera rotation, or camera FOV crosses its per-frame `MinStep` — so a stationary player who is still panning the camera or zooming stays active, and camera context on the wire stays fresh. `ping` and `stop` carry whichever segment totals are nonzero: `movement.distance` (m), `movement.camera_distance` (m), `movement.rotation_degrees` (`Quaternion.Angle`-based — wraparound-safe), `movement.fov_delta` (sum of |Δfov|), plus `movement.duration` (s). Toggle with `TestingFloorSettings.movementTrackingEnabled` or `TestingFloor.SetMovementTrackingEnabled(...)`. Tunable per-signal on the settings asset: position (`movementMinPingDistance` / `movementMinStep`), camera world position (`movementMinPingCameraDistance` / `movementMinStepCameraDistance`), rotation (`movementMinPingRotationDegrees` / `movementMinStepRotationDegrees`), FOV (`movementMinPingFovDegrees` / `movementMinStepFovDegrees`), plus shared `movementMinPingIntervalSeconds` / `movementStartGraceSeconds` / `movementStopGraceSeconds`. Defaults target ~2 path samples per second for a humanoid character with mouselook-style camera. Camera signals are only sampled when a camera source is registered via `TestingFloor.SetCameraSource(...)` / `UseMainCamera()`; without one, behavior reduces to position-only detection.
-- Runtime QR heartbeat opt-in/out API via `TestingFloor.SetQrHeartbeatsEnabled(...)`.
-- Runtime QR heartbeat color override via `TestingFloor.SetQrHeartbeatInverted(...)`.
-- Documented telemetry QR payload format: `tfqr://sync/v1?s=<session_id>&t=<unix_ms>&q=<sequence>`.
-- QR heartbeats are hidden by default while a desktop-recorder handoff asks to suppress QR. Launchers can pass `suppress_qr: false` to keep QR visible for tracked-but-not-recorded launches. Enable `qrHeartbeatsEnabledWithRecorderSession` in settings to force QR during recorder-launched sessions, or pass `--forceqr` to force QR in any session.
-- Low-allocation telemetry JSON writer for the runtime send path.
+- Read-only `TestingFloor.PlayerId` exposes the Player ID shown in Testing Floor: the profile ID, falling back to the device ID. Each play-session ID is one run.
 
-### Changed
-
-- The README and the `ProfileId`, `DeviceId`, and `PlaySessionId` docs now use Testing Floor's names: `$user_id` (or `$device_id` when there is no `$user_id`) is the Player ID, and each `$session_id` is one run. There is no `analytics_id` field; the app's older "analytics ID" label meant the Player ID.
-- QR heartbeat codes now rotate every 15 seconds by default.
-- QR heartbeat timing controls are presented as advanced settings in the custom inspector.
-
-### Added
-
-- Typed `Set(string, string[])` and `Set(string, int[])` overloads on `EventBuilder` and `ContextSnapshot` for tag-style array properties.
-- `Set(string, Guid)` overload that serializes the GUID as a JSON string.
-- `SetIfPresent` overloads for `int?`, `long?`, `float?`, `double?`, and `bool?` that skip when the value is `null`.
-
-### Removed
-
-- `Set(string, object)` overload on `EventBuilder` and `ContextSnapshot`. Property values must use a typed overload (`string`, `long`, `double`, `bool`, `string[]`, `int[]`) so they serialize as the correct JSON token instead of silently stringifying.
+- A shared SDK contract covering identity, units, fields, delivery limits, retry behavior, and safe defaults.
+- Current setup, lifecycle, diagnostics, testing, and migration documentation.
 
 ## [0.1.0] — 2026-04-19
 

@@ -1,7 +1,7 @@
 using System;
 using UnityEngine;
 
-namespace TestingFloor {
+namespace TestingFloorSdk {
     public static class MovementReasons {
         public const string Start = "start";
         public const string Stop = "stop";
@@ -136,10 +136,10 @@ namespace TestingFloor {
             var rotStep = StepRotation(sample.CameraRotation, ref _lastCameraRotation, ref _hasLastCameraRotation);
             var fovStep = StepFov(sample.CameraFov, ref _lastCameraFov, ref _hasLastCameraFov);
 
-            var movedPos = posStep >= MinStep;
-            var movedCamPos = camPosStep >= MinStepCameraDistance;
-            var movedRot = rotStep >= MinStepRotationDegrees;
-            var movedFov = fovStep >= MinStepFovDegrees;
+            var movedPos = posStep > 0f && posStep >= MinStep;
+            var movedCamPos = camPosStep > 0f && camPosStep >= MinStepCameraDistance;
+            var movedRot = rotStep > 0f && rotStep >= MinStepRotationDegrees;
+            var movedFov = fovStep > 0f && fovStep >= MinStepFovDegrees;
             var movedAny = movedPos || movedCamPos || movedRot || movedFov;
 
             if (movedAny) {
@@ -226,7 +226,7 @@ namespace TestingFloor {
         }
 
         bool ShouldEmitPing(float now) {
-            if (now - _lastPingTime < MinPingIntervalSeconds) return false;
+            if (!_isMoving || now - _lastPingTime < MinPingIntervalSeconds) return false;
             return _pingDistance >= MinPingDistance
                 || _pingRotation >= MinPingRotationDegrees
                 || _pingFov >= MinPingFovDegrees

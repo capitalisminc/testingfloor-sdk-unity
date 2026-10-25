@@ -1,7 +1,7 @@
 using System.Threading.Tasks;
 using UnityEngine.Networking;
 
-namespace TestingFloor.Internal {
+namespace TestingFloorSdk.Internal {
     internal static class WebRequestAwaiter {
         public static Task<UnityWebRequest> SendAsync(UnityWebRequest req) {
             var tcs = new TaskCompletionSource<UnityWebRequest>();

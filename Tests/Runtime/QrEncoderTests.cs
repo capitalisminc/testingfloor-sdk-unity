@@ -1,11 +1,11 @@
 using System.Collections.Generic;
 using NUnit.Framework;
-using TestingFloor.Internal;
+using TestingFloorSdk.Internal;
 using UnityEngine;
 using ZXing;
 using ZXing.Common;
 
-namespace TestingFloor.Tests {
+namespace TestingFloorSdk.Tests {
     public class QrEncoderTests {
         [Test]
         public void ShortPayloadFitsInVersion1() {

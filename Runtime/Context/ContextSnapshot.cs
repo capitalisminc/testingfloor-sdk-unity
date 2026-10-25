@@ -1,10 +1,10 @@
 using System;
 using System.Collections.Generic;
-using TestingFloor.Internal;
+using TestingFloorSdk.Internal;
 
-namespace TestingFloor {
+namespace TestingFloorSdk {
     public struct ContextSnapshot {
-        public PlatformContext Platform;
+        internal PlatformContext Platform;
         internal Dictionary<string, object> Properties;
 
         internal static ContextSnapshot Create(PlatformContext platform) {
@@ -14,67 +14,33 @@ namespace TestingFloor {
             };
         }
 
-        public void Set(string key, string value) {
-            if (string.IsNullOrWhiteSpace(key) || value == null) return;
-            Properties ??= TelemetryQueue.RentProperties();
-            Properties[key] = value;
+        internal static bool IsPropertyKey(string key) => !string.IsNullOrWhiteSpace(key) && !key.StartsWith("$", StringComparison.Ordinal);
+
+        internal static void Put(ref Dictionary<string, object> properties, string key, object value) {
+            if (!IsPropertyKey(key) || value == null) return;
+            if (value is double d && (double.IsNaN(d) || double.IsInfinity(d))) return;
+            if (value is float f && (float.IsNaN(f) || float.IsInfinity(f))) return;
+            if (value is Array array) value = array.Clone();
+            properties ??= TelemetryQueue.RentProperties();
+            properties[key] = value;
         }
 
-        public void Set(string key, long value) {
-            if (string.IsNullOrWhiteSpace(key)) return;
-            Properties ??= TelemetryQueue.RentProperties();
-            Properties[key] = value;
+        public void Set(string key, string value) => Put(ref Properties, key, value);
+        public void Set(string key, long value) => Put(ref Properties, key, value);
+        public void Set(string key, double value) => Put(ref Properties, key, value);
+        public void Set(string key, bool value) => Put(ref Properties, key, value);
+        public void Set(string key, string[] value) => Put(ref Properties, key, value);
+        public void Set(string key, int[] value) => Put(ref Properties, key, value);
+        public void Set(string key, Guid value) => Put(ref Properties, key, value);
+        public void SetVector(string prefix, UnityEngine.Vector3 value) {
+            Set(prefix + ".x", value.x); Set(prefix + ".y", value.y); Set(prefix + ".z", value.z);
         }
-
-        public void Set(string key, double value) {
-            if (string.IsNullOrWhiteSpace(key)) return;
-            Properties ??= TelemetryQueue.RentProperties();
-            Properties[key] = value;
-        }
-
-        public void Set(string key, bool value) {
-            if (string.IsNullOrWhiteSpace(key)) return;
-            Properties ??= TelemetryQueue.RentProperties();
-            Properties[key] = value;
-        }
-
-        public void Set(string key, string[] value) {
-            if (string.IsNullOrWhiteSpace(key) || value == null) return;
-            Properties ??= TelemetryQueue.RentProperties();
-            Properties[key] = value;
-        }
-
-        public void Set(string key, int[] value) {
-            if (string.IsNullOrWhiteSpace(key) || value == null) return;
-            Properties ??= TelemetryQueue.RentProperties();
-            Properties[key] = value;
-        }
-
-        public void Set(string key, Guid value) {
-            if (string.IsNullOrWhiteSpace(key)) return;
-            Properties ??= TelemetryQueue.RentProperties();
-            Properties[key] = value;
-        }
-
-        public void SetIfPresent(string key, int? value) {
-            if (value.HasValue) Set(key, value.Value);
-        }
-
-        public void SetIfPresent(string key, long? value) {
-            if (value.HasValue) Set(key, value.Value);
-        }
-
-        public void SetIfPresent(string key, float? value) {
-            if (value.HasValue) Set(key, value.Value);
-        }
-
-        public void SetIfPresent(string key, double? value) {
-            if (value.HasValue) Set(key, value.Value);
-        }
-
-        public void SetIfPresent(string key, bool? value) {
-            if (value.HasValue) Set(key, value.Value);
-        }
+        public void SetIfPresent(string key, string value) { if (!string.IsNullOrWhiteSpace(value)) Set(key, value); }
+        public void SetIfPresent(string key, int? value) { if (value.HasValue) Set(key, value.Value); }
+        public void SetIfPresent(string key, long? value) { if (value.HasValue) Set(key, value.Value); }
+        public void SetIfPresent(string key, float? value) { if (value.HasValue) Set(key, value.Value); }
+        public void SetIfPresent(string key, double? value) { if (value.HasValue) Set(key, value.Value); }
+        public void SetIfPresent(string key, bool? value) { if (value.HasValue) Set(key, value.Value); }
 
         internal static void WriteObjectValue(TelemetryJsonWriter writer, string key, object value) {
             switch (value) {

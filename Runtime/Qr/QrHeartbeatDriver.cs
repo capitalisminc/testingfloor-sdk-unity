@@ -1,7 +1,7 @@
 using System;
 using UnityEngine;
 
-namespace TestingFloor {
+namespace TestingFloorSdk {
     internal static class QrHeartbeatDriver {
         const string ForceQrArg = "--forceqr";
 
@@ -27,6 +27,7 @@ namespace TestingFloor {
 
         internal static bool EffectiveEnabled {
             get {
+                if (TestingFloorSettings.IsAutomation) return false;
                 if (_enabledOverride.HasValue) return _enabledOverride.Value;
                 var settings = TestingFloorSettings.Current;
                 return EffectiveEnabledFor(settings, TestingFloorRecording.SuppressesQr, ForceQrArgumentPresent);
@@ -51,7 +52,8 @@ namespace TestingFloor {
             Apply();
         }
 
-        internal static bool EffectiveEnabledFor(TestingFloorSettings settings, bool suppressQr, bool forceQrArgument) {
+        internal static bool EffectiveEnabledFor(TestingFloorSettings settings, bool suppressQr, bool forceQrArgument, bool automation = false) {
+            if (automation) return false;
             if (forceQrArgument) return true;
             if (settings == null) return false;
             if (suppressQr && settings.qrHeartbeatsEnabledWithRecorderSession) return true;
@@ -61,7 +63,8 @@ namespace TestingFloor {
         }
 
         internal static bool IsForceQrArgument(string arg) {
-            return string.Equals(arg, ForceQrArg, StringComparison.OrdinalIgnoreCase);
+            return string.Equals(arg, ForceQrArg, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(arg, "-forceqr", StringComparison.OrdinalIgnoreCase);
         }
 
         internal static void SetInvertedOverride(bool inverted) {

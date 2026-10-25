@@ -2,7 +2,7 @@ using NUnit.Framework;
 using UnityEditor;
 using UnityEngine;
 
-namespace TestingFloor.Tests.Editor {
+namespace TestingFloorSdk.Tests.Editor {
     public class SettingsInspectorTests {
         [Test]
         public void DefaultSettingsAreNotEnabledForBuildWithoutWriteKey() {
@@ -22,7 +22,10 @@ namespace TestingFloor.Tests.Editor {
             try {
                 settings.writeKey = "wk_test";
                 settings.enableInEditor = true;
-                Assert.IsTrue(settings.IsEnabledForBuild);
+                Assert.IsTrue(settings.ShouldCollect(editor: false, automation: false));
+                Assert.IsTrue(settings.ShouldCollect(editor: true, automation: false));
+                Assert.IsFalse(settings.IsEnabledForBuild, "Automated tests must never send live telemetry");
+                Assert.IsFalse(settings.ShouldCollect(editor: false, automation: true));
             }
             finally {
                 Object.DestroyImmediate(settings);
@@ -49,7 +52,7 @@ namespace TestingFloor.Tests.Editor {
             try {
                 var editor = UnityEditor.Editor.CreateEditor(settings);
                 try {
-                    Assert.IsInstanceOf<global::TestingFloor.Editor.TestingFloorSettingsInspector>(editor);
+                    Assert.IsInstanceOf<global::TestingFloorSdk.Editor.TestingFloorSettingsInspector>(editor);
                 }
                 finally {
                     Object.DestroyImmediate(editor);

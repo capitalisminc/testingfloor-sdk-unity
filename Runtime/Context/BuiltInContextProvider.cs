@@ -1,9 +1,9 @@
 using UnityEngine;
 
-namespace TestingFloor {
+namespace TestingFloorSdk {
     internal static class BuiltInContextProvider {
         internal static void Fill(ref ContextSnapshot snapshot) {
-            var position = global::TestingFloor.TestingFloor.GetPlayerPosition();
+            var position = global::TestingFloorSdk.TestingFloor.GetPlayerPosition();
             if (position.HasValue) {
                 var p = position.Value;
                 snapshot.Set("player.position.x", p.x);
@@ -11,7 +11,7 @@ namespace TestingFloor {
                 snapshot.Set("player.position.z", p.z);
             }
 
-            var camera = global::TestingFloor.TestingFloor.GetCamera();
+            var camera = global::TestingFloorSdk.TestingFloor.GetCamera();
             if (camera != null) {
                 var t = camera.transform;
                 var pos = t.position;
@@ -22,7 +22,11 @@ namespace TestingFloor {
                 snapshot.Set("camera.euler.x", euler.x);
                 snapshot.Set("camera.euler.y", euler.y);
                 snapshot.Set("camera.euler.z", euler.z);
+                var forward = t.forward;
+                snapshot.SetVector("camera.forward", forward);
                 snapshot.Set("camera.fov", (double)camera.fieldOfView);
+                snapshot.Set("camera.fov_axis", "vertical");
+                snapshot.Platform = snapshot.Platform.WithScreenSize(camera.pixelWidth, camera.pixelHeight);
                 snapshot.Set("viewport.width", (long)camera.pixelWidth);
                 snapshot.Set("viewport.height", (long)camera.pixelHeight);
             }

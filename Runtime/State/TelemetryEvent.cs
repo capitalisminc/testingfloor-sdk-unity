@@ -1,7 +1,9 @@
 using System.Collections.Generic;
 
-namespace TestingFloor {
-    public readonly struct TelemetryEvent {
+namespace TestingFloorSdk {
+    internal readonly struct TelemetryEvent {
+        public readonly System.Guid Id;
+        public readonly TestingFloorRecording Recording;
         public readonly string EventType;
         public readonly Dictionary<string, object> EventProperties;
         public readonly ContextSnapshot Context;
@@ -18,6 +20,8 @@ namespace TestingFloor {
             string userId,
             long timestampMs,
             string sessionId) {
+            Id = System.Guid.NewGuid();
+            Recording = TestingFloorRecording.Current;
             EventType = eventType;
             EventProperties = eventProperties;
             Context = context;

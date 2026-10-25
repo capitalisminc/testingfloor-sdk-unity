@@ -1,12 +1,12 @@
 using NUnit.Framework;
 using UnityEngine;
 
-namespace TestingFloor.Tests {
+namespace TestingFloorSdk.Tests {
     public class BuiltInContextProviderTests {
         [TearDown]
         public void TearDown() {
-            global::TestingFloor.TestingFloor.ClearPositionSource();
-            global::TestingFloor.TestingFloor.ClearCameraSource();
+            global::TestingFloorSdk.TestingFloor.ClearPositionSource();
+            global::TestingFloorSdk.TestingFloor.ClearCameraSource();
         }
 
         [Test]
@@ -18,7 +18,7 @@ namespace TestingFloor.Tests {
 
         [Test]
         public void FillWithPositionSourceWritesPlayerKeys() {
-            global::TestingFloor.TestingFloor.SetPositionSource(() => new Vector3(1.5f, 2.25f, -3f));
+            global::TestingFloorSdk.TestingFloor.SetPositionSource(() => new Vector3(1.5f, 2.25f, -3f));
             var snapshot = ContextSnapshot.Create(PlatformContext.Capture());
             BuiltInContextProvider.Fill(ref snapshot);
 
@@ -33,7 +33,7 @@ namespace TestingFloor.Tests {
 
         [Test]
         public void FillWithNullReturningPositionSourceWritesNothing() {
-            global::TestingFloor.TestingFloor.SetPositionSource(() => null);
+            global::TestingFloorSdk.TestingFloor.SetPositionSource(() => null);
             var snapshot = ContextSnapshot.Create(PlatformContext.Capture());
             BuiltInContextProvider.Fill(ref snapshot);
             Assert.IsNull(snapshot.Properties);
@@ -41,7 +41,7 @@ namespace TestingFloor.Tests {
 
         [Test]
         public void FillWithThrowingPositionSourceDoesNotPropagate() {
-            global::TestingFloor.TestingFloor.SetPositionSource(() => throw new System.InvalidOperationException("nope"));
+            global::TestingFloorSdk.TestingFloor.SetPositionSource(() => throw new System.InvalidOperationException("nope"));
             var snapshot = ContextSnapshot.Create(PlatformContext.Capture());
             Assert.DoesNotThrow(() => BuiltInContextProvider.Fill(ref snapshot));
             Assert.IsNull(snapshot.Properties);

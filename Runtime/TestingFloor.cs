@@ -1,13 +1,13 @@
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
-using TestingFloor.Internal;
+using TestingFloorSdk.Internal;
 using UnityEngine;
 #if UNITY_EDITOR
 using UnityEditor;
 #endif
 
-namespace TestingFloor {
+namespace TestingFloorSdk {
     public static class TestingFloor {
         const float QuitFlushTimeoutSeconds = 2f;
 
@@ -113,14 +113,17 @@ namespace TestingFloor {
 
         public static void SetCameraSource(Func<Camera> source) {
             _cameraSource = source;
+            MovementDriver.Apply();
         }
 
         public static void UseMainCamera() {
             _cameraSource = () => Camera.main;
+            MovementDriver.Apply();
         }
 
         public static void ClearCameraSource() {
             _cameraSource = null;
+            MovementDriver.Apply();
         }
 
         public static void SetMovementTrackingEnabled(bool enabled) {
@@ -167,7 +170,7 @@ namespace TestingFloor {
             }
         }
 
-        internal static bool HasPositionSource => _positionSource != null;
+        internal static bool HasActivitySource => _positionSource != null || _cameraSource != null;
 
         public static void SetQrHeartbeatsEnabled(bool enabled) {
             QrHeartbeatDriver.SetEnabledOverride(enabled);
@@ -195,6 +198,10 @@ namespace TestingFloor {
         public static bool QrHeartbeatsEnabled => QrHeartbeatDriver.EffectiveEnabled;
 
         public static bool QrHeartbeatInverted => QrHeartbeatDriver.EffectiveInverted;
+
+        public static int PendingEventCount => TelemetryQueue.PendingEventCount;
+
+        public static int DroppedEventCount => TelemetryQueue.DroppedEventCount;
 
         /// <summary>
         /// A random id the SDK creates on first launch and keeps in
@@ -244,15 +251,15 @@ namespace TestingFloor {
             }
         }
 
-        internal static void TrackEventInternal(string eventType, Dictionary<string, object> eventProperties) {
+        internal static bool TrackEventInternal(string eventType, Dictionary<string, object> eventProperties) {
             EnsureInitialized();
-            if (_state == TelemetryState.Disabled) {
+            if (_state != TelemetryState.Ok && _state != TelemetryState.NetworkDown) {
                 TelemetryQueue.ReturnProperties(eventProperties);
-                return;
+                return false;
             }
             if (string.IsNullOrWhiteSpace(eventType)) {
                 TelemetryQueue.ReturnProperties(eventProperties);
-                return;
+                return false;
             }
 
             var context = BuildContext();
@@ -269,7 +276,7 @@ namespace TestingFloor {
                 sessionId: PlaySessionId
             );
 
-            TelemetryQueue.Enqueue(ev, _settings, GetClient, ApplySendResult);
+            return TelemetryQueue.Enqueue(ev, _settings, GetClient, ApplySendResult);
         }
 
         static ContextSnapshot BuildContext() {
@@ -277,7 +284,7 @@ namespace TestingFloor {
                 _platformContext = PlatformContext.Capture();
                 _platformContextCaptured = true;
             }
-            var snapshot = ContextSnapshot.Create(_platformContext);
+            var snapshot = ContextSnapshot.Create(_platformContext.WithScreenSize(Screen.width, Screen.height));
             try {
                 BuiltInContextProvider.Fill(ref snapshot);
             }
@@ -300,7 +307,7 @@ namespace TestingFloor {
         static void EnsureInitialized() {
             if (_initialized) return;
 
-            if (_forceDisabled) {
+            if (_forceDisabled || TestingFloorSettings.IsAutomation) {
                 _client = null;
                 _state = TelemetryState.Disabled;
                 _initialized = true;
@@ -334,13 +341,15 @@ namespace TestingFloor {
             _initialized = true;
         }
 
-        static CollectorClient GetClient() => _client;
+        static IBatchSender GetClient() => _client;
 
         static void ApplySendResult(SendResult result) {
             if (_state == TelemetryState.Disabled) return;
             _state = result switch {
                 SendResult.Success => TelemetryState.Ok,
-                SendResult.FatalConfiguration => TelemetryState.NotConfigured,
+                SendResult.InvalidRequest => TelemetryState.Ok,
+                SendResult.Rejected => TelemetryState.Rejected,
+                SendResult.NotConfigured => TelemetryState.NotConfigured,
                 _ => TelemetryState.NetworkDown,
             };
         }

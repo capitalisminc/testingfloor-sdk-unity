@@ -2,7 +2,7 @@ using System;
 using System.IO;
 using UnityEngine;
 
-namespace TestingFloor.Internal {
+namespace TestingFloorSdk.Internal {
     internal static class Identity {
         const string DeviceIdKey = "TestingFloor.DeviceId";
         const string ProfileIdFileName = "profile_id";

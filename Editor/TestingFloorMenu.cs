@@ -2,7 +2,7 @@ using System.IO;
 using UnityEditor;
 using UnityEngine;
 
-namespace TestingFloor.Editor {
+namespace TestingFloorSdk.Editor {
     internal static class TestingFloorMenu {
         const string ResourcesFolder = "Assets/Resources";
         const string SettingsAssetPath = "Assets/Resources/TestingFloorSettings.asset";

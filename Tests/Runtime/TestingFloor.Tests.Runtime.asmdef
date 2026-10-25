@@ -1,6 +1,6 @@
 {
     "name": "TestingFloor.Tests.Runtime",
-    "rootNamespace": "TestingFloor.Tests",
+    "rootNamespace": "TestingFloorSdk.Tests",
     "references": [
         "UnityEngine.TestRunner",
         "UnityEditor.TestRunner",

@@ -1,52 +1,66 @@
 # Testing Floor SDK for Unity
 
-Add Testing Floor telemetry and recording sync to a Unity game.
+Add gameplay events and recording sync to a Unity game. Start with one useful
+event; add movement, maps, or external-capture QR sync when you need them.
+Requires Unity 6 and a Testing Floor game write key. Licensed under MIT.
 
-## Install
+## Install and send your first event
 
-In Unity:
-
-1. Open **Window -> Package Manager**.
-2. Click **+**.
-3. Choose **Add package from git URL...**.
-4. Paste:
-
-```text
-https://github.com/capitalisminc/testingfloor-sdk-unity.git
-```
-
-Then run **Tools -> Testing Floor -> Create Settings Asset** and paste your Testing Floor write key.
-
-## Track Events
+1. In **Window -> Package Manager**, select **+ -> Add package from git URL**:
+   `https://github.com/capitalisminc/testingfloor-sdk-unity.git`.
+2. Select **Tools -> Testing Floor -> Create Settings Asset**.
+3. Paste your game's write key into the asset. Keep real keys out of source control.
+4. Enable **Enable In Editor** while checking the integration in Play mode.
 
 ```csharp
-using TestingFloor;
+using TestingFloorSdk;
 
-TestingFloor.Track("weapon_fire")
-    .Set("weapon.id", "plasma_rifle")
-    .Set("damage", 42)
+TestingFloor.Track("level_started")
+    .Set("game_level.id", "tutorial")
     .Send();
 ```
 
-`Set` accepts `string`, `long` (and `int`), `double` (and `float`), `bool`, `string[]`, `int[]`, and `Guid`. For optional values, `SetIfPresent` accepts `string`, `int?`, `long?`, `float?`, `double?`, and `bool?` and skips when null. Other types — enums, `decimal`, `DateTime`, custom structs — are a compile error; convert at the call site (e.g. `weapon.ToString()`, `(long)timestamp.Ticks`) so the type sent over the wire is explicit.
+Trigger the event and check the game's telemetry status page in Testing Floor.
+Editor collection is off by default, and automated SDK tests never send live
+telemetry. A missing settings asset or write key disables sends.
 
-Add game state that should be attached to every event:
+## Events and shared context
+
+`Track` creates a single-use builder. `Send()` returns whether the event entered
+the in-memory queue; it does not confirm server delivery. Create a new builder
+for each event. Sending or changing an already-sent builder throws.
 
 ```csharp
-public sealed class MyGameContextProvider : ITelemetryContextProvider {
+bool queued = TestingFloor.Track("weapon_fire")
+    .Set("weapon.id", "plasma_rifle")
+    .Set("damage", 42)
+    .SetIfPresent("target.id", optionalTargetId)
+    .Send();
+```
+
+`Set` accepts strings, signed integers, finite floats/doubles, booleans, GUIDs,
+string arrays, and integer arrays. Arrays are copied. Null values, empty keys,
+reserved `$` keys, and nonfinite numbers are omitted. Convert enums or custom
+values explicitly; nested objects are unsupported. `SetVector(prefix, vector)`
+adds `.x`, `.y`, and `.z` fields.
+
+Register shared state once; keep the provider inexpensive. Event properties
+win when they use the same key as context.
+
+```csharp
+public sealed class GameContext : ITelemetryContextProvider {
     public void FillSnapshot(ref ContextSnapshot snapshot) {
-        snapshot.Set("level.id", Level.Current?.Id);
-        snapshot.Set("player.hp_percent", Player.Current?.HpPercent ?? 0.0);
+        snapshot.Set("game_level.id", "tutorial");
+        snapshot.Set("difficulty", "normal");
     }
 }
 
-public static class TestingFloorBootstrap {
-    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
-    static void Boot() {
-        TestingFloor.RegisterContextProvider(new MyGameContextProvider());
-    }
-}
+// During your game's initialization:
+TestingFloor.RegisterContextProvider(new GameContext());
 ```
+
+Use SDK APIs and context providers on Unity's main thread. Clear the provider
+with `RegisterContextProvider(null)` when its owner is torn down.
 
 ## Player ID and Runs
 
@@ -68,133 +82,93 @@ The SDK creates these ids itself and attaches them to every event, so you don't 
 playerIdLabel.text = $"Player ID: {TestingFloor.PlayerId}";
 ```
 
-Older Testing Floor setup pages called the Player ID the "analytics ID" and showed an `analytics_id` field. That field doesn't exist. The Player ID always comes from `$user_id`, or from `$device_id` when there is no `$user_id`.
-
-## Player & Camera Context
-
-Hand the SDK a player transform and a camera, and every event will automatically carry position, camera pose, camera FOV, and viewport size — no per-call wiring:
+## Player, camera, and movement
 
 ```csharp
 TestingFloor.SetPositionSource(playerTransform);
 TestingFloor.UseMainCamera();
-```
-
-These attach `player.position.{x,y,z}`, `camera.position.{x,y,z}`, `camera.euler.{x,y,z}`, `camera.fov`, `viewport.width`, and `viewport.height` to every event. If you don't have a `Transform` handy, pass a `Func<Vector3?>` instead; return `null` to omit the player keys from that event. Same for the camera with `SetCameraSource(Func<Camera>)`. Clear with `ClearPositionSource()` / `ClearCameraSource()`.
-
-## Movement Events
-
-Once a position source is registered, you can opt into a debounced `player_moved` event that won't blast one event per frame:
-
-```csharp
 TestingFloor.SetMovementTrackingEnabled(true);
 ```
 
-The event carries:
+Every event includes available player/camera positions, camera rotation,
+forward direction, vertical FOV, and viewport size. Positions use native meters.
+A function returning `Vector3?` can replace the player transform; return `null`
+when unavailable. Use `SetCameraSource(Func<Camera>)` for a custom camera.
 
-- `movement.reason` — `start` (player just began moving), `ping` (still moving — emitted on a debounce), or `stop` (movement ended)
-- `movement.distance` — meters covered in the segment this event closes (segment-since-last-ping for `ping`, full run for `stop`)
-- `movement.duration` — seconds elapsed in the same segment
+Movement is opt-in and samples player or camera-only activity. `player_moved`
+reports `start`, `ping`, and `stop`, with nonzero distance, camera distance,
+rotation, FOV-change, and duration metrics. Defaults target about two path
+samples per second. Configure thresholds in the settings asset rather than
+sending movement events every frame. Timing uses unscaled time during pause.
 
-Defaults are tuned for a 1-unit-per-meter humanoid character at roughly 2 path samples per second. Tune them on the settings asset if your scale or pacing is different:
-
-- `movementMinPingDistance` (default `0.5`)
-- `movementMinPingIntervalSeconds` (default `0.5`)
-- `movementStartGraceSeconds` (default `0.05`)
-- `movementStopGraceSeconds` (default `0.25`)
-- `movementMinStep` (default `0.005`) — sub-step jitter ignored
-
-You can also flip `movementTrackingEnabled` on the settings asset to make the project's default opt-in. `TestingFloor.UseConfiguredMovementTracking()` reverts the runtime override back to the asset's value.
+Clear sources with `ClearPositionSource()` / `ClearCameraSource()`. Runtime
+movement overrides can be reset with `UseConfiguredMovementTracking()`.
 
 ## Teleports
-
-Wrap teleports so Testing Floor draws them as discontinuities instead of interpolating across the jump:
 
 ```csharp
 using var teleport = TestingFloor.BeginTeleport("respawn");
 await MovePlayerAsync(destination);
 ```
 
-For one-frame teleports, call `RecordTeleport` after the move if you already know both endpoints:
+For an instantaneous move, call `RecordTeleport(start, end, "respawn")` after
+moving. A scope suspends movement sampling, emits one `player_teleported` event,
+and resets the destination baseline. Call `teleport.Cancel()` to cancel without
+an event. Positions and scalar distances are meters.
 
-```csharp
-var start = player.transform.position;
-player.transform.position = destination;
-TestingFloor.RecordTeleport(start, destination, "debug_warp");
-```
+## Recording sync
 
-The SDK emits one `player_teleported` event at completion with `teleport.start.position.{x,y,z}`, `teleport.end.position.{x,y,z}`, `teleport.duration`, and `teleport.distance`. While a teleport scope is active, built-in `player_moved` sampling is suspended and then reset at the destination so the next movement segment starts cleanly.
+The SDK creates a fresh `PlaySessionId` on each game launch or editor Play run.
+`TestingFloor.Recording?.RecordingUuid` identifies a recording that can span
+several Play runs. No synthetic session bookend events are emitted.
 
-## Recording Sync
+The desktop recorder passes `--testing-floor={"recording_uuid":"..."}` or writes
+`Library/TestingFloor/recording-payload.json`. The SDK reads the sidecar at each
+Play start; the recorder owns its cleanup. Do not construct handoffs manually
+for normal recorder use.
 
-If testers record with OBS, browser capture, or another external recorder, enable the visible sync QR before recording starts:
+For OBS or other external capture, show the built-in marker while recording:
 
 ```csharp
 TestingFloor.SetQrHeartbeatsEnabled(true);
-```
-
-Turn it off when the recording flow ends:
-
-```csharp
+// When external capture stops:
 TestingFloor.SetQrHeartbeatsEnabled(false);
 ```
 
-The QR appears in the top-right of the game view and helps Testing Floor line up the video with telemetry. If testers use the Testing Floor recorder, you usually do not need to enable it manually. When the recorder passes a session handoff for an active capture, the SDK hides QR heartbeats by default because the recorder can sync from that handoff.
+The marker uses an inverted QR, refreshed every 15 seconds. Recorder handoffs
+normally suppress it. `qrHeartbeatsEnabledWithRecorderSession` or a `--forceqr`
+launch argument can override that suppression. `SetQrHeartbeatInverted(false)`
+selects black-on-white rendering. Reset runtime overrides with
+`UseConfiguredQrHeartbeats()` / `UseConfiguredQrHeartbeatColors()`.
 
-When enabled, the QR changes every 15 seconds by default. Timing controls exist for unusual capture setups, but most projects should leave them alone.
+## Delivery, diagnostics, and shutdown
 
-The QR is inverted by default. Use normal black-on-white rendering if your recorder or scanner prefers it:
+Defaults are 50 events per batch, a 0.25-second flush window, and 4,096 pending
+events including requests in flight. Queue overflow drops the newest event.
+Network errors, HTTP 408/429, and server errors retry in order with stable event
+IDs and exponential backoff. HTTP 401/403 reject the play session; other invalid
+client requests are dropped. Oversized events are dropped before sending.
 
-```csharp
-TestingFloor.SetQrHeartbeatInverted(false);
-```
-
-You can also set `qrHeartbeatsEnabled`, `qrHeartbeatsEnabledWithRecorderSession`, and `qrHeartbeatInverted` in `TestingFloorSettings` for builds where the QR should follow the asset setting. `qrHeartbeatsEnabledWithRecorderSession` shows the QR during recorder-launched sessions even when normal QR heartbeats are off; pass `--forceqr` at launch to force the QR in any session.
-
-## Performance
-
-- `Track(...).Send()` is lightweight and queues events in memory.
-- Calling `.Set(...)` stores event properties; avoid large objects or per-frame spam.
-- Context providers run for every event, so keep them cheap.
-- Network work happens when the SDK flushes queued events. The sender bundles up to 50 events per HTTP request with a 0.25 s flush window. Tune `batchMaxEvents` and `batchMaxFlushIntervalSeconds` on the settings asset; set the interval to `0` to send each event in its own request.
-- The QR overlay is disabled by default. When enabled, it renders cheaply but regenerates the QR texture on its refresh interval.
-
-## Common Calls
+`TestingFloor.State`, `PendingEventCount`, and `DroppedEventCount` expose local
+status. Inspect the game's telemetry status page to confirm receipt.
 
 ```csharp
 await TestingFloor.FlushAsync(TimeSpan.FromSeconds(2));
-
-var playerId = TestingFloor.PlayerId;
-
-TestingFloor.SetPositionSource(playerTransform);
-TestingFloor.UseMainCamera();
-TestingFloor.SetMovementTrackingEnabled(true);
-using var teleport = TestingFloor.BeginTeleport();
-
-TestingFloor.SetQrHeartbeatsEnabled(true);
-TestingFloor.SetQrHeartbeatsEnabled(false);
-TestingFloor.UseConfiguredQrHeartbeats();
-TestingFloor.SetQrHeartbeatInverted(false);
-TestingFloor.UseConfiguredQrHeartbeatColors();
 ```
 
-## Advanced
+The SDK requests a two-second flush on quit. A flush is best effort and waits
+at most five seconds; it respects retry backoff. There is no disk spool. Crashes,
+overflow, rejected keys, and shutdown deadlines can lose events.
 
-`TestingFloorSettings` lives at `Assets/Resources/TestingFloorSettings.asset`. Most games only need `writeKey` and optionally `qrHeartbeatsEnabled` / `qrHeartbeatInverted`.
+Advanced settings live in `Assets/Resources/TestingFloorSettings.asset`, including
+`queueMaxEvents`, `batchMaxEvents`, `batchMaxFlushIntervalSeconds`, and movement
+thresholds. Most games need only the write key and activity sources.
 
-QR heartbeat timing is an advanced sync setting. The default interval is 15 seconds, and tuning it is not usually recommended unless Testing Floor support asks you to adjust it.
+## Contract, development, and license
 
-Testing Floor launchers can pass session data with `--testing-floor={json}` or `{projectRoot}/Library/TestingFloor/session-payload.json`. The payload may contain `session_id` from the desktop recorder or `recording_uuid` from older integrations. That `session_id` comes from the recorder and links the recording. It isn't the run's `$session_id`: each run still gets its own from `TestingFloor.PlaySessionId`. Add `"suppress_qr": false` for launches that should keep the QR visible even though a session handoff id is present, such as Play without recording.
+See [SDK_CONTRACT.md](SDK_CONTRACT.md) for behavior shared with the
+[Unreal SDK](https://github.com/capitalisminc/testingfloor-sdk-unreal), and
+[CONTRIBUTING.md](CONTRIBUTING.md) for package tests and local development.
+[CHANGELOG.md](CHANGELOG.md) documents breaking changes in 0.2.0.
 
-For local SDK development, add this to `Packages/manifest.json`:
-
-```json
-{
-  "dependencies": {
-    "com.testingfloor.unity-sdk": "file:../../testingfloor-sdk-unity"
-  }
-}
-```
-
-## License
-
-MIT. See [LICENSE.md](LICENSE.md).
+MIT. See [LICENSE.md](LICENSE.md) and [ThirdPartyNotices.md](ThirdPartyNotices.md).

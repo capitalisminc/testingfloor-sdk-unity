@@ -1,6 +1,6 @@
 using UnityEngine;
 
-namespace TestingFloor.Internal {
+namespace TestingFloorSdk.Internal {
     internal sealed class QrMatrix {
         readonly bool[,] _modules;
         public int Version { get; }

@@ -1,6 +1,6 @@
 using UnityEngine;
 
-namespace TestingFloor {
+namespace TestingFloorSdk {
     [CreateAssetMenu(fileName = "TestingFloorSettings", menuName = "Testing Floor/Settings", order = 999)]
     public sealed class TestingFloorSettings : ScriptableObject {
         public bool enabled = true;
@@ -18,7 +18,6 @@ namespace TestingFloor {
 
         public float qrHeartbeatIntervalSeconds = DefaultQrHeartbeatIntervalSeconds;
         public float qrHeartbeatVisibleSeconds = 0f;
-        [HideInInspector] public int qrHeartbeatVisibleFrames = 6;
 
         public bool movementTrackingEnabled = false;
         public float movementMinPingDistance = 0.5f;
@@ -33,6 +32,7 @@ namespace TestingFloor {
         public float movementMinPingCameraDistance = 0.5f;
         public float movementMinStepCameraDistance = 0.005f;
 
+        public int queueMaxEvents = 4096;
         public int batchMaxEvents = 50;
         public float batchMaxFlushIntervalSeconds = 0.25f;
 
@@ -51,15 +51,15 @@ namespace TestingFloor {
             }
         }
 
-        public bool IsEnabledForBuild {
-            get {
-                if (!enabled) return false;
-                if (Application.isEditor && !enableInEditor) return false;
-                if (string.IsNullOrWhiteSpace(writeKey)) return false;
-                if (string.IsNullOrWhiteSpace(endpoint)) return false;
-                return true;
-            }
-        }
+        public bool IsEnabledForBuild => ShouldCollect(Application.isEditor, IsAutomation);
+
+        internal bool ShouldCollect(bool editor, bool automation) => enabled && !automation
+            && (!editor || enableInEditor) && !string.IsNullOrWhiteSpace(writeKey) && !string.IsNullOrWhiteSpace(endpoint);
+
+        internal static bool IsAutomation => IsAutomationArgs(System.Environment.GetCommandLineArgs());
+
+        internal static bool IsAutomationArgs(string[] args) => System.Array.Exists(args,
+            arg => string.Equals(arg, "-runTests", System.StringComparison.OrdinalIgnoreCase));
 
         internal float EffectiveQrHeartbeatIntervalSeconds {
             get {

@@ -2,7 +2,7 @@ using System.Collections.Generic;
 using NUnit.Framework;
 using UnityEngine;
 
-namespace TestingFloor.Tests {
+namespace TestingFloorSdk.Tests {
     public class MovementSamplerTests {
         static MovementSampler MakeSampler() {
             return new MovementSampler {
@@ -335,6 +335,18 @@ namespace TestingFloor.Tests {
             Assert.Greater(stop.Distance, 4f, "stop carries cumulative player distance");
             Assert.Greater(stop.RotationDegrees, 40f, "stop carries cumulative rotation degrees");
             Assert.Greater(stop.FovDelta, 8f, "stop carries cumulative FOV delta");
+        }
+        [Test]
+        public void ZeroThresholdsDoNotEmitWhileStill() {
+            var sampler = new MovementSampler();
+            sampler.Reset();
+            var events = new System.Collections.Generic.List<MovementEvent>();
+            var sample = new ActivitySample(playerPosition: UnityEngine.Vector3.zero,
+                cameraRotation: UnityEngine.Quaternion.identity, cameraFov: 90f);
+            sampler.Step(0f, sample, events.Add);
+            sampler.Step(1f, sample, events.Add);
+            sampler.Step(2f, sample, events.Add);
+            Assert.IsEmpty(events, "Zero thresholds must not turn zero motion into activity");
         }
     }
 }

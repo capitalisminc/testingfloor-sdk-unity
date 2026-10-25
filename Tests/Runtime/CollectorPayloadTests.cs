@@ -1,10 +1,10 @@
 using System.Collections.Generic;
 using System.Text;
 using NUnit.Framework;
-using TestingFloor.Internal;
+using TestingFloorSdk.Internal;
 using UnityEngine;
 
-namespace TestingFloor.Tests {
+namespace TestingFloorSdk.Tests {
     public class CollectorPayloadTests {
         const int BodyCap = JsonPayloadWriter.CollectorBodyByteCap;
         const int EventCap = JsonPayloadWriter.CollectorEventByteCap;
@@ -258,6 +258,26 @@ namespace TestingFloor.Tests {
 
         static PlatformContext GetPlatformContextForTesting() {
             return PlatformContext.Capture();
+        }
+        [Test]
+        public void RetryingTheSameEventPreservesItsWireIdentityAndTimestamp() {
+            var ev = new TelemetryEvent("example", null, ContextSnapshot.Create(default), "device", null, 1234, "play");
+            var writer = new JsonPayloadWriter();
+            var first = BuildSingle(writer, ev, "example-write-key", "unused");
+            var retry = BuildSingle(writer, ev, "example-write-key", "unused");
+            StringAssert.Contains("\"$id\":\"" + ev.Id + "\"", first);
+            StringAssert.Contains("\"$id\":\"" + ev.Id + "\"", retry);
+            StringAssert.Contains("1970-01-01T00:00:01.234", retry);
+        }
+
+        [Test]
+        public void ReservedPropertyKeysCannotReplacePlatformFields() {
+            var properties = new Dictionary<string, object> { ["$name"] = "spoof", ["$unknown"] = 1L };
+            var ev = new TelemetryEvent("example", properties, ContextSnapshot.Create(default), null, null, 0, "play");
+            var json = BuildSingle(new JsonPayloadWriter(), ev, "example-write-key", "unused");
+            StringAssert.Contains("\"$name\":\"example\"", json);
+            StringAssert.DoesNotContain("spoof", json);
+            StringAssert.DoesNotContain("$unknown", json);
         }
     }
 }

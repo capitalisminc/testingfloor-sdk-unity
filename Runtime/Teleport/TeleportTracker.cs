@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using UnityEngine;
 
-namespace TestingFloor {
+namespace TestingFloorSdk {
     internal static class TeleportTracker {
         const string TeleportEventName = "player_teleported";
         const string TeleportKindKey = "teleport.kind";
@@ -32,7 +32,7 @@ namespace TestingFloor {
         internal static TeleportScope Begin(string reason) {
             var id = ++_nextId;
             s_active[id] = new ActiveTeleport(
-                startPosition: global::TestingFloor.TestingFloor.GetPlayerPosition(),
+                startPosition: global::TestingFloorSdk.TestingFloor.GetPlayerPosition(),
                 startTime: Time.unscaledTime,
                 reason: reason
             );
@@ -46,7 +46,7 @@ namespace TestingFloor {
             _movementResetRequested = true;
             if (cancelled) return;
 
-            var endPosition = global::TestingFloor.TestingFloor.GetPlayerPosition();
+            var endPosition = global::TestingFloorSdk.TestingFloor.GetPlayerPosition();
             if (!active.StartPosition.HasValue || !endPosition.HasValue) return;
 
             var durationSeconds = Math.Max(0f, Time.unscaledTime - active.StartTime);
@@ -57,9 +57,8 @@ namespace TestingFloor {
             _movementResetRequested = true;
 
             var distance = Vector3.Distance(start, end);
-            if (distance < MinDistance()) return;
 
-            var builder = global::TestingFloor.TestingFloor.Track(TeleportEventName)
+            var builder = global::TestingFloorSdk.TestingFloor.Track(TeleportEventName)
                 .Set(TeleportKindKey, "teleport")
                 .Set(TeleportDurationKey, Math.Max(0.0, durationSeconds))
                 .Set(TeleportDistanceKey, (double)distance)
@@ -81,11 +80,6 @@ namespace TestingFloor {
             if (!_movementResetRequested) return false;
             _movementResetRequested = false;
             return true;
-        }
-
-        static float MinDistance() {
-            var settings = TestingFloorSettings.Current;
-            return settings == null ? 0f : Mathf.Max(0f, settings.movementMinStep);
         }
 
         readonly struct ActiveTeleport {

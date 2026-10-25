@@ -1,7 +1,7 @@
 using NUnit.Framework;
-using TestingFloor.Internal;
+using TestingFloorSdk.Internal;
 
-namespace TestingFloor.Tests {
+namespace TestingFloorSdk.Tests {
     public class PlayerIdTests {
         [Test]
         public void PlayerIdIsProfileIdWhenPresent() {

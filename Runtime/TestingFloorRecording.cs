@@ -2,7 +2,7 @@ using System;
 using System.IO;
 using UnityEngine;
 
-namespace TestingFloor {
+namespace TestingFloorSdk {
     /// <summary>
     /// The recording context handed off by the Testing Floor desktop recorder.
     /// One recording can contain many Play sessions — Editor stop+restart, domain
@@ -13,19 +13,16 @@ namespace TestingFloor {
     /// </summary>
     public sealed class TestingFloorRecording {
         public string RecordingUuid { get; }
-        public string SessionId { get; }
         public long? PlaytestId { get; }
         public bool SuppressQr { get; }
 
-        internal TestingFloorRecording(string recordingUuid, string sessionId, long? playtestId, bool suppressQr) {
+        internal TestingFloorRecording(string recordingUuid, long? playtestId, bool suppressQr) {
             RecordingUuid = recordingUuid;
-            SessionId = sessionId;
             PlaytestId = playtestId;
             SuppressQr = suppressQr;
         }
 
         const string CliPrefix = "--testing-floor=";
-        const string SessionPayloadFileName = "session-payload.json";
         const string RecordingPayloadFileName = "recording-payload.json";
         const int MaxPayloadAgeHours = 12;
 
@@ -103,13 +100,13 @@ namespace TestingFloor {
         }
 
         static TestingFloorRecording ParsePayload(string json, string label) {
-            var payload = JsonUtility.FromJson<Payload>(json);
+            var payload = new Payload();
+            JsonUtility.FromJsonOverwrite(json, payload);
             if (payload == null) return null;
 
-            var sessionId = Normalized(payload.session_id);
-            var recordingUuid = Normalized(payload.recording_uuid) ?? sessionId;
-            if (string.IsNullOrWhiteSpace(recordingUuid) && string.IsNullOrWhiteSpace(sessionId)) {
-                Debug.LogWarning($"[TestingFloor] {label} missing session_id/recording_uuid; ignoring.");
+            var recordingUuid = Normalized(payload.recording_uuid);
+            if (recordingUuid == null) {
+                Debug.LogWarning($"[TestingFloor] {label} missing recording_uuid; ignoring.");
                 return null;
             }
 
@@ -125,7 +122,7 @@ namespace TestingFloor {
                 }
             }
 
-            return new TestingFloorRecording(recordingUuid, sessionId, PayloadPlaytestId(payload), PayloadSuppressQr(json, payload));
+            return new TestingFloorRecording(recordingUuid, PayloadPlaytestId(payload), payload.suppress_qr);
         }
 
         static string[] GetSidecarPaths() {
@@ -133,7 +130,6 @@ namespace TestingFloor {
                 var projectRoot = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
                 var dir = Path.Combine(projectRoot, "Library", "TestingFloor");
                 return new[] {
-                    Path.Combine(dir, SessionPayloadFileName),
                     Path.Combine(dir, RecordingPayloadFileName),
                 };
             }
@@ -143,26 +139,19 @@ namespace TestingFloor {
         }
 
         static string Normalized(string value) {
-            return string.IsNullOrWhiteSpace(value) ? null : value;
+            return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
         }
 
         static long? PayloadPlaytestId(Payload payload) {
             return payload.playtest_id > 0 ? payload.playtest_id : null;
         }
 
-        static bool PayloadSuppressQr(string json, Payload payload) {
-            return json.IndexOf("\"suppress_qr\"", StringComparison.Ordinal) < 0 || payload.suppress_qr;
-        }
-
         [Serializable]
         sealed class Payload {
-            public string session_id;
             public string recording_uuid;
             public long playtest_id;
             public long created_at_unix_ms;
-            public int schema;
-            public string source;
-            public bool suppress_qr;
+            public bool suppress_qr = true;
         }
     }
 }

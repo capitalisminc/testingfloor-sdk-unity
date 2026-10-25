@@ -1,23 +1,23 @@
 using NUnit.Framework;
 using UnityEngine;
 
-namespace TestingFloor.Tests {
+namespace TestingFloorSdk.Tests {
     public class TeleportTrackerTests {
         [SetUp]
         public void SetUp() {
             while (TeleportTracker.ConsumeMovementResetRequested()) { }
-            global::TestingFloor.TestingFloor.ClearPositionSource();
+            global::TestingFloorSdk.TestingFloor.ClearPositionSource();
         }
 
         [TearDown]
         public void TearDown() {
-            global::TestingFloor.TestingFloor.ClearPositionSource();
+            global::TestingFloorSdk.TestingFloor.ClearPositionSource();
             while (TeleportTracker.ConsumeMovementResetRequested()) { }
         }
 
         [Test]
         public void RecordTeleportRequestsMovementReset() {
-            global::TestingFloor.TestingFloor.RecordTeleport(
+            global::TestingFloorSdk.TestingFloor.RecordTeleport(
                 Vector3.zero,
                 new Vector3(10f, 0f, 0f),
                 "test",
@@ -30,9 +30,9 @@ namespace TestingFloor.Tests {
         [Test]
         public void ScopeStaysActiveUntilDisposed() {
             var position = Vector3.zero;
-            global::TestingFloor.TestingFloor.SetPositionSource(() => position);
+            global::TestingFloorSdk.TestingFloor.SetPositionSource(() => position);
 
-            var scope = global::TestingFloor.TestingFloor.BeginTeleport("async");
+            var scope = global::TestingFloorSdk.TestingFloor.BeginTeleport("async");
             Assert.IsTrue(TeleportTracker.IsTeleporting);
 
             position = new Vector3(5f, 0f, 0f);

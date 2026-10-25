@@ -1,7 +1,9 @@
-namespace TestingFloor {
-    public enum SendResult {
+namespace TestingFloorSdk {
+    internal enum SendResult {
         Success,
         TransientFailure,
-        FatalConfiguration,
+        InvalidRequest,
+        Rejected,
+        NotConfigured,
     }
 }

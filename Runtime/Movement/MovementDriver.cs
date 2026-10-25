@@ -1,6 +1,6 @@
 using UnityEngine;
 
-namespace TestingFloor {
+namespace TestingFloorSdk {
     internal static class MovementDriver {
         static GameObject _trackerGo;
         static bool? _enabledOverride;
@@ -18,7 +18,7 @@ namespace TestingFloor {
 
         internal static bool EffectiveEnabled {
             get {
-                if (!TestingFloor.HasPositionSource) return false;
+                if (TestingFloorSettings.IsAutomation || !TestingFloor.HasActivitySource) return false;
                 if (_enabledOverride.HasValue) return _enabledOverride.Value;
                 var settings = TestingFloorSettings.Current;
                 return settings != null && settings.movementTrackingEnabled;

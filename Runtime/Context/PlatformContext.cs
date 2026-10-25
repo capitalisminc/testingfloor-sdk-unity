@@ -1,7 +1,7 @@
 using UnityEngine;
 
-namespace TestingFloor {
-    public readonly struct PlatformContext {
+namespace TestingFloorSdk {
+    internal readonly struct PlatformContext {
         public readonly string Os;
         public readonly string Locale;
         public readonly string AppVersion;
@@ -30,6 +30,9 @@ namespace TestingFloor {
             SdkVersion = sdkVersion;
         }
 
+        public PlatformContext WithScreenSize(int width, int height) => new PlatformContext(
+            Os, Locale, AppVersion, UnityVersion, width, height, DeviceModel, SdkVersion);
+
         public static PlatformContext Capture() {
             return new PlatformContext(
                 os: Application.platform.ToString(),
@@ -45,6 +48,6 @@ namespace TestingFloor {
     }
 
     internal static class TestingFloorVersion {
-        public const string Value = "0.1.0";
+        public const string Value = "0.2.0";
     }
 }

@@ -1,6 +1,6 @@
 {
     "name": "TestingFloor.Tests.Editor",
-    "rootNamespace": "TestingFloor.Tests.Editor",
+    "rootNamespace": "TestingFloorSdk.Tests.Editor",
     "references": [
         "UnityEngine.TestRunner",
         "UnityEditor.TestRunner",

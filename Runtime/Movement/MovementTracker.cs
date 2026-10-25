@@ -1,7 +1,7 @@
 using System;
 using UnityEngine;
 
-namespace TestingFloor {
+namespace TestingFloorSdk {
     [DisallowMultipleComponent]
     internal sealed class MovementTracker : MonoBehaviour {
         const string MovementEventName = "player_moved";
@@ -39,8 +39,8 @@ namespace TestingFloor {
         }
 
         static ActivitySample BuildSample() {
-            var playerPosition = global::TestingFloor.TestingFloor.GetPlayerPosition();
-            var camera = global::TestingFloor.TestingFloor.GetCamera();
+            var playerPosition = global::TestingFloorSdk.TestingFloor.GetPlayerPosition();
+            var camera = global::TestingFloorSdk.TestingFloor.GetCamera();
             if (camera == null) {
                 return new ActivitySample(playerPosition: playerPosition);
             }
@@ -69,7 +69,7 @@ namespace TestingFloor {
         }
 
         static void TrackMovementEvent(MovementEvent ev) {
-            var builder = global::TestingFloor.TestingFloor.Track(MovementEventName)
+            var builder = global::TestingFloorSdk.TestingFloor.Track(MovementEventName)
                 .Set(MovementReasonKey, ev.Reason);
             if (ev.Distance > 0f) {
                 builder = builder.Set(MovementDistanceKey, (double)ev.Distance);

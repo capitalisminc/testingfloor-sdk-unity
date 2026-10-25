@@ -1,7 +1,7 @@
 using UnityEditor;
 using UnityEngine;
 
-namespace TestingFloor.Editor {
+namespace TestingFloorSdk.Editor {
     [CustomEditor(typeof(TestingFloorSettings))]
     public sealed class TestingFloorSettingsInspector : UnityEditor.Editor {
         SerializedProperty _enabled;

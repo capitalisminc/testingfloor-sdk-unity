@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using Net.Codecrete.QrCodeGenerator;
 using ThirdPartyQrCode = Net.Codecrete.QrCodeGenerator.QrCode;
 
-namespace TestingFloor.Internal {
+namespace TestingFloorSdk.Internal {
     /// QR Code encoder backed by the vendored Codecrete/Nayuki implementation.
     internal static class QrEncoder {
         const int MaxVersion = 10;

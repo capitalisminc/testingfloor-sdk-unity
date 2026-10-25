@@ -1,9 +1,9 @@
 using System;
-using TestingFloor.Internal;
+using TestingFloorSdk.Internal;
 using UnityEngine;
 using UnityEngine.UI;
 
-namespace TestingFloor {
+namespace TestingFloorSdk {
     /// Draws a telemetry sync QR code in a fixed screen corner.
     /// Payload is `tfqr://sync/v1?s=<session_id>&t=<unix_ms>&q=<sequence>`.
     internal sealed class QrHeartbeatOverlay : MonoBehaviour {

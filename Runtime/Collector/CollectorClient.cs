@@ -4,18 +4,24 @@ using System.Threading.Tasks;
 using UnityEngine;
 using UnityEngine.Networking;
 
-namespace TestingFloor.Internal {
+namespace TestingFloorSdk.Internal {
     internal readonly struct BatchSendOutcome {
         public readonly SendResult Result;
         public readonly int Consumed;
+        public readonly int Dropped;
 
-        public BatchSendOutcome(SendResult result, int consumed) {
+        public BatchSendOutcome(SendResult result, int consumed, int dropped = 0) {
             Result = result;
             Consumed = consumed;
+            Dropped = dropped;
         }
     }
 
-    internal sealed class CollectorClient {
+    internal interface IBatchSender {
+        ValueTask<BatchSendOutcome> TrackBatchAsync(IReadOnlyList<TelemetryEvent> events);
+    }
+
+    internal sealed class CollectorClient : IBatchSender {
         readonly TestingFloorSettings _settings;
         readonly JsonPayloadWriter _writer = new();
         bool _invalidWriteKey;
@@ -27,10 +33,10 @@ namespace TestingFloor.Internal {
 
         public async ValueTask<BatchSendOutcome> TrackBatchAsync(IReadOnlyList<TelemetryEvent> events) {
             if (events == null || events.Count == 0) return new BatchSendOutcome(SendResult.Success, 0);
-            if (_invalidWriteKey) return new BatchSendOutcome(SendResult.FatalConfiguration, events.Count);
-            if (_settings == null || !_settings.IsEnabledForBuild) return new BatchSendOutcome(SendResult.FatalConfiguration, events.Count);
-            if (string.IsNullOrWhiteSpace(_settings.writeKey)) return new BatchSendOutcome(SendResult.FatalConfiguration, events.Count);
-            if (string.IsNullOrWhiteSpace(_settings.endpoint)) return new BatchSendOutcome(SendResult.FatalConfiguration, events.Count);
+            if (_invalidWriteKey) return new BatchSendOutcome(SendResult.Rejected, events.Count, events.Count);
+            if (_settings == null || !_settings.IsEnabledForBuild) return new BatchSendOutcome(SendResult.NotConfigured, events.Count, events.Count);
+            if (string.IsNullOrWhiteSpace(_settings.writeKey)) return new BatchSendOutcome(SendResult.NotConfigured, events.Count, events.Count);
+            if (string.IsNullOrWhiteSpace(_settings.endpoint)) return new BatchSendOutcome(SendResult.NotConfigured, events.Count, events.Count);
 
             var sessionId = TestingFloor.PlaySessionId;
             // Reserve room for the envelope and gzip headroom inside the collector's body cap.
@@ -48,12 +54,13 @@ namespace TestingFloor.Internal {
             if (written == 0) {
                 // Every candidate event was oversized and skipped. Tell the caller to dequeue
                 // them but treat the (non-)send as a Success — there's nothing to retry.
-                return new BatchSendOutcome(SendResult.Success, consumed);
+                return new BatchSendOutcome(SendResult.Success, consumed, consumed - written);
             }
 
             using var request = new UnityWebRequest(BuildEndpoint(), UnityWebRequest.kHttpVerbPOST);
             request.uploadHandler = new UploadHandlerRaw(bytes);
             request.downloadHandler = new DownloadHandlerBuffer();
+            request.timeout = 10;
             request.SetRequestHeader("Content-Type", "application/json");
 
             try {
@@ -63,36 +70,41 @@ namespace TestingFloor.Internal {
                 if (_settings.logErrors) {
                     Debug.LogWarning($"[TestingFloor] Collector request failed: {ex.Message}");
                 }
-                return new BatchSendOutcome(SendResult.TransientFailure, consumed);
+                return new BatchSendOutcome(SendResult.TransientFailure, 0);
             }
 
             if (request.result == UnityWebRequest.Result.Success) {
                 if (_settings.logEventSends) {
                     Debug.Log($"[TestingFloor] Sent batch of {written} event(s) ({request.responseCode}).");
                 }
-                return new BatchSendOutcome(SendResult.Success, consumed);
+                return new BatchSendOutcome(SendResult.Success, consumed, consumed - written);
             }
 
-            if (request.responseCode == 401) {
+            var result = ClassifyResponse(request.responseCode, false);
+            if (result == SendResult.Rejected) {
                 _invalidWriteKey = true;
                 if (!_loggedInvalidWriteKey) {
                     _loggedInvalidWriteKey = true;
-                    Debug.LogError("[TestingFloor] Write key rejected (401). Collector sends are now disabled for this session.");
+                    Debug.LogWarning("[TestingFloor] Write key rejected. Collector sends are disabled for this play session.");
                 }
-                return new BatchSendOutcome(SendResult.FatalConfiguration, consumed);
             }
-
             if (_settings.logErrors) {
-                var responseText = request.downloadHandler?.text;
-                var suffix = string.IsNullOrWhiteSpace(responseText) ? string.Empty : $" {responseText}";
-                Debug.LogWarning($"[TestingFloor] Collector request failed: {request.result} {request.error} ({request.responseCode}).{suffix}");
+                Debug.LogWarning($"[TestingFloor] Collector request failed (HTTP {request.responseCode}).");
             }
+            return result == SendResult.TransientFailure
+                ? new BatchSendOutcome(result, 0)
+                : new BatchSendOutcome(result, consumed, consumed);
+        }
 
-            return new BatchSendOutcome(SendResult.TransientFailure, consumed);
+        internal static SendResult ClassifyResponse(long status, bool succeeded = true) {
+            if (status >= 200 && status < 300) return succeeded ? SendResult.Success : SendResult.TransientFailure;
+            if (status == 401 || status == 403) return SendResult.Rejected;
+            if (status >= 400 && status < 500 && status != 408 && status != 429) return SendResult.InvalidRequest;
+            return SendResult.TransientFailure;
         }
 
         string BuildEndpoint() {
-            return $"{_settings.endpoint.TrimEnd('/')}/v1/batch";
+            return $"{_settings.endpoint.Trim().TrimEnd('/')}/v1/batch";
         }
     }
 }

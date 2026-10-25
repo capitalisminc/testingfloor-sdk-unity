@@ -1,7 +1,7 @@
 using System;
 using NUnit.Framework;
 
-namespace TestingFloor.Tests {
+namespace TestingFloorSdk.Tests {
     public class EventBuilderTests {
         [Test]
         public void SetAccumulatesProperties() {
@@ -48,8 +48,10 @@ namespace TestingFloor.Tests {
                 .Set("tags", strs)
                 .Set("levels", ints);
 
-            Assert.AreSame(strs, b._properties["tags"]);
-            Assert.AreSame(ints, b._properties["levels"]);
+            Assert.AreNotSame(strs, b._properties["tags"]);
+            CollectionAssert.AreEqual(strs, (string[])b._properties["tags"]);
+            Assert.AreNotSame(ints, b._properties["levels"]);
+            CollectionAssert.AreEqual(ints, (int[])b._properties["levels"]);
         }
 
         [Test]
@@ -85,6 +87,35 @@ namespace TestingFloor.Tests {
             Assert.AreEqual(1.5, b._properties["f"]);
             Assert.AreEqual(2.25, b._properties["d"]);
             Assert.AreEqual(true, b._properties["b"]);
+        }
+        [Test]
+        public void ReservedKeysAndNonfiniteValuesAreIgnored() {
+            var builder = new EventBuilder().Set("$name", "spoof").Set("", "empty")
+                .Set("nan", double.NaN).Set("infinite", double.PositiveInfinity);
+            Assert.IsNull(builder._properties);
+            var snapshot = ContextSnapshot.Create(default);
+            snapshot.Set("$schema", 99L);
+            snapshot.Set("nan", double.NaN);
+            Assert.IsNull(snapshot.Properties);
+        }
+
+        [Test]
+        public void BuilderCannotBeSentTwiceOrMutatedAfterSending() {
+            var builder = global::TestingFloorSdk.TestingFloor.Track("example").Set("value", 42);
+            Assert.IsFalse(builder.Send(), "Automation cannot enqueue live telemetry");
+            Assert.Throws<InvalidOperationException>(() => builder.Send());
+            Assert.Throws<InvalidOperationException>(() => builder.Set("value", 43));
+        }
+
+        [Test]
+        public void PropertyArraysOwnTheirCapturedValues() {
+            var values = new[] { "before" };
+            var builder = new EventBuilder().Set("values", values);
+            var snapshot = ContextSnapshot.Create(default);
+            snapshot.Set("values", values);
+            values[0] = "after";
+            Assert.AreEqual("before", ((string[])builder._properties["values"])[0]);
+            Assert.AreEqual("before", ((string[])snapshot.Properties["values"])[0]);
         }
     }
 }

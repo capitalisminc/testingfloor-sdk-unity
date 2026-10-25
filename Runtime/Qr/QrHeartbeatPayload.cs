@@ -1,6 +1,6 @@
 using System;
 
-namespace TestingFloor.Internal {
+namespace TestingFloorSdk.Internal {
     internal static class QrHeartbeatPayload {
         public const string Prefix = "tfqr://sync/v1";
 

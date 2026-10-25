@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using UnityEngine;
 
-namespace TestingFloor.Internal {
+namespace TestingFloorSdk.Internal {
     internal sealed class JsonPayloadWriter {
         // Collector enforces these caps. Mirrored here so the SDK can short-circuit
         // before the request goes out and split a too-big batch into chunks.
@@ -102,7 +102,7 @@ namespace TestingFloor.Internal {
         static void WriteEventObject(TelemetryJsonWriter writer, TelemetryEvent ev, string fallbackSessionId) {
             writer.WriteStartObject();
 
-            writer.WriteString("$id", Guid.NewGuid());
+            writer.WriteString("$id", ev.Id);
             writer.WriteString("$name", ev.EventType);
             writer.WriteString("$time", DateTimeOffset.FromUnixTimeMilliseconds(ev.TimestampMs));
             writer.WriteNumber("$schema", 1);
@@ -117,13 +117,13 @@ namespace TestingFloor.Internal {
             var effectivePlaySessionId = !string.IsNullOrWhiteSpace(ev.SessionId) ? ev.SessionId : fallbackSessionId;
             writer.WriteString("$session_id", effectivePlaySessionId);
 
-            WriteTestingFloorContext(writer, ev.Context);
+            WriteTestingFloorContext(writer, ev.Context, ev.Recording);
             WriteMergedProperties(writer, ev.Context.Properties, ev.EventProperties);
 
             writer.WriteEndObject();
         }
 
-        static void WriteTestingFloorContext(TelemetryJsonWriter writer, ContextSnapshot context) {
+        static void WriteTestingFloorContext(TelemetryJsonWriter writer, ContextSnapshot context, TestingFloorRecording recording) {
             var p = context.Platform;
             writer.WritePropertyName("$tf");
             writer.WriteStartObject();
@@ -138,16 +138,8 @@ namespace TestingFloor.Internal {
             if (p.ScreenHeight > 0) writer.WriteNumber("screen_height", p.ScreenHeight);
             WriteString(writer, "locale", p.Locale);
 
-            // The recording context is only present when this Play session was
-            // launched by the Testing Floor desktop recorder. The server uses
-            // tf.recording_uuid to group all Play sessions belonging to a
-            // single recording and tf.session_id to link recorder-launched
-            // games that received the companion's client session id directly.
-            // Outside a recording these fields are omitted.
-            var recording = TestingFloorRecording.Current;
             if (recording != null) {
                 WriteString(writer, "recording_uuid", recording.RecordingUuid);
-                WriteString(writer, "session_id", recording.SessionId);
                 if (recording.PlaytestId.HasValue) {
                     writer.WriteNumber("playtest_id", recording.PlaytestId.Value);
                 }
@@ -166,7 +158,7 @@ namespace TestingFloor.Internal {
 
             if (contextProperties != null) {
                 foreach (var kvp in contextProperties) {
-                    if (string.IsNullOrWhiteSpace(kvp.Key)) continue;
+                    if (!ContextSnapshot.IsPropertyKey(kvp.Key)) continue;
                     if (eventProperties != null && eventProperties.ContainsKey(kvp.Key)) continue;
                     ContextSnapshot.WriteObjectValue(writer, kvp.Key, kvp.Value);
                 }
@@ -174,7 +166,7 @@ namespace TestingFloor.Internal {
 
             if (eventProperties != null) {
                 foreach (var kvp in eventProperties) {
-                    if (string.IsNullOrWhiteSpace(kvp.Key)) continue;
+                    if (!ContextSnapshot.IsPropertyKey(kvp.Key)) continue;
                     ContextSnapshot.WriteObjectValue(writer, kvp.Key, kvp.Value);
                 }
             }
