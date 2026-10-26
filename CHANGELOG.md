@@ -18,8 +18,8 @@
 - When the queue refused part of a large keyframe, the next keyframe started
   from the same objects, so the last ones were never sent. Live objects from a
   refused record now come first in the next check.
-- Consecutive object checks always get increasing `$time`, so readers that
-  order rows by time keep the checks apart.
+- Consecutive object checks always get increasing `$time`, also when repeated
+  checks at quit fall in one millisecond.
 
 ## 0.4.1
 
