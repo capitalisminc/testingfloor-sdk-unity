@@ -15,11 +15,14 @@ namespace TestingFloorSdk {
         public string RecordingUuid { get; }
         public long? PlaytestId { get; }
         public bool SuppressQr { get; }
+        public string TelemetryDirectory { get; }
+        internal bool Closed { get; set; }
 
-        internal TestingFloorRecording(string recordingUuid, long? playtestId, bool suppressQr) {
+        internal TestingFloorRecording(string recordingUuid, long? playtestId, bool suppressQr, string telemetryDirectory = null) {
             RecordingUuid = recordingUuid;
             PlaytestId = playtestId;
             SuppressQr = suppressQr;
+            TelemetryDirectory = telemetryDirectory;
         }
 
         const string CliPrefix = "--testing-floor=";
@@ -41,7 +44,7 @@ namespace TestingFloorSdk {
 
         public static TestingFloorRecording Current {
             get {
-                if (_resolved) return _current;
+                if (_resolved) return _current != null && !_current.Closed ? _current : null;
                 _resolved = true;
                 _current = ResolveFromArgs() ?? ResolveFromSidecar();
                 return _current;
@@ -122,7 +125,7 @@ namespace TestingFloorSdk {
                 }
             }
 
-            return new TestingFloorRecording(recordingUuid, PayloadPlaytestId(payload), payload.suppress_qr);
+            return new TestingFloorRecording(recordingUuid, PayloadPlaytestId(payload), payload.suppress_qr, Normalized(payload.telemetry_directory));
         }
 
         static string[] GetSidecarPaths() {
@@ -149,6 +152,7 @@ namespace TestingFloorSdk {
         [Serializable]
         sealed class Payload {
             public string recording_uuid;
+            public string telemetry_directory;
             public long playtest_id;
             public long created_at_unix_ms;
             public bool suppress_qr = true;

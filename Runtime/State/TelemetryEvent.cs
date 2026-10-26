@@ -19,9 +19,10 @@ namespace TestingFloorSdk {
             string deviceId,
             string userId,
             long timestampMs,
-            string sessionId) {
+            string sessionId,
+            TestingFloorRecording recording = null) {
             Id = System.Guid.NewGuid();
-            Recording = TestingFloorRecording.Current;
+            Recording = recording ?? TestingFloorRecording.Current;
             EventType = eventType;
             EventProperties = eventProperties;
             Context = context;
