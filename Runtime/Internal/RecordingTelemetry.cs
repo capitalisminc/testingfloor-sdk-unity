@@ -8,9 +8,10 @@ namespace TestingFloorSdk.Internal {
         static string _session;
         static Action<TestingFloorRecording, string> _onComplete;
         static Action _beforeClose;
+        static bool _closing;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
-        internal static void ResetStatics() { _recording = null; _session = null; _onComplete = null; _beforeClose = null; }
+        internal static void ResetStatics() { _recording = null; _session = null; _onComplete = null; _beforeClose = null; _closing = false; }
 
         // `beforeClose` runs when the recorder closes the recording, while it is still open, so
         // records buffered until then go out with it, ahead of its completion marker.
@@ -32,9 +33,17 @@ namespace TestingFloorSdk.Internal {
         }
 
         internal static void Poll() {
-            if (_recording == null || _recording.Closed ||
+            if (_closing || _recording == null || _recording.Closed ||
                 !File.Exists(Path.Combine(_recording.TelemetryDirectory, "closed.json"))) return;
-            _beforeClose?.Invoke();
+            // A position callback or state provider can send an event while buffered records go
+            // out, and every event polls here. Those events join the still-open recording.
+            _closing = true;
+            try {
+                _beforeClose?.Invoke();
+            }
+            finally {
+                _closing = false;
+            }
             Finish();
         }
 

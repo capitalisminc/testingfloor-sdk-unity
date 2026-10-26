@@ -453,6 +453,36 @@ namespace TestingFloorSdk.Tests {
         }
 
         [Test]
+        public void RecordingCloseToleratesCallbacksThatSendEvents() {
+            var directory = System.IO.Path.Combine(System.IO.Path.GetTempPath(), Guid.NewGuid().ToString());
+            System.IO.Directory.CreateDirectory(directory);
+            try {
+                var recording = new TestingFloorRecording("example-recording", null, true, directory);
+                TestingFloorRecording.UseForTesting(recording);
+                Assert.IsTrue(global::TestingFloorSdk.TestingFloor.RegisterRecording(recording));
+                global::TestingFloorSdk.TestingFloor.TrackObject("crate", () => {
+                    global::TestingFloorSdk.TestingFloor.Track("crate_sampled").Send();
+                    return Vector3.one;
+                }, "crate");
+                _records.Clear();
+
+                System.IO.File.WriteAllText(System.IO.Path.Combine(directory, "closed.json"), "1");
+                RecordingTelemetry.Poll();
+
+                Assert.IsTrue(recording.Closed);
+                Assert.AreEqual(1, Names().Count(name => name == "$tf_telemetry_complete"));
+                var marker = Array.IndexOf(Names(), "$tf_telemetry_complete");
+                var sampled = Array.IndexOf(Names(), "crate_sampled");
+                Assert.That(sampled, Is.GreaterThanOrEqualTo(0).And.LessThan(marker), "The callback's event joins the recording ahead of its marker");
+                Assert.AreSame(recording, _records[sampled].Recording);
+            }
+            finally {
+                RecordingTelemetry.ResetStatics();
+                System.IO.Directory.Delete(directory, true);
+            }
+        }
+
+        [Test]
         public async Task RemovalRefusedAtRecordingCloseCountsTowardTheMarker() {
             var directory = System.IO.Path.Combine(System.IO.Path.GetTempPath(), Guid.NewGuid().ToString());
             System.IO.Directory.CreateDirectory(directory);
