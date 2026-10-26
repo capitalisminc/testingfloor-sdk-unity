@@ -27,9 +27,6 @@ namespace TestingFloorSdk.Internal {
             readonly Func<Vector3?> _source;
             readonly bool _usesTransform;
             internal bool Live = true;
-            // Registered while a removal of the same id waits to be sent, so
-            // its first sample waits one check and starts a new path.
-            internal bool Deferred;
             internal Vector3? Pending;
             internal bool HasSent;
             internal Vector3 LastSent;
@@ -47,23 +44,39 @@ namespace TestingFloorSdk.Internal {
                 _usesTransform = source == null;
             }
 
-            internal Vector3? Read(out bool destroyed) {
+            // A position with a NaN or infinite axis cannot be written as JSON, so it counts as
+            // `invalid`: no position this time, without ending the object.
+            internal Vector3? Read(out bool destroyed, out bool invalid) {
                 destroyed = false;
+                invalid = false;
+                Vector3? position;
                 if (_usesTransform) {
                     if (_transform == null) {
                         destroyed = true;
                         return null;
                     }
-                    return _transform.position;
+                    position = _transform.position;
                 }
-                try {
-                    return _source();
+                else {
+                    try {
+                        position = _source();
+                    }
+                    catch (Exception ex) {
+                        if (Owner.LogErrors) Debug.LogWarning($"[TestingFloor] Position source for tracked object '{Id}' threw: {ex}");
+                        return null;
+                    }
                 }
-                catch (Exception ex) {
-                    if (Owner.LogErrors) Debug.LogWarning($"[TestingFloor] Position source for tracked object '{Id}' threw: {ex}");
+                if (position.HasValue && !IsFinite(position.Value)) {
+                    invalid = true;
                     return null;
                 }
+                return position;
             }
+
+            static bool IsFinite(Vector3 v) =>
+                !float.IsNaN(v.x) && !float.IsInfinity(v.x) &&
+                !float.IsNaN(v.y) && !float.IsInfinity(v.y) &&
+                !float.IsNaN(v.z) && !float.IsInfinity(v.z);
         }
 
         readonly struct Removal {
@@ -82,6 +95,8 @@ namespace TestingFloorSdk.Internal {
         readonly Dictionary<string, Entry> _byId = new(StringComparer.Ordinal);
         readonly Dictionary<string, int> _kindCounts = new(StringComparer.Ordinal);
         readonly List<Removal> _removals = new();
+        readonly List<Removal> _carriedRemovals = new();
+        readonly HashSet<string> _endedIds = new(StringComparer.Ordinal);
         readonly ObjectRecordBuilder _builder = new();
         double _lastKeyframeAt = double.NaN;
         bool _keyframeDue;
@@ -110,10 +125,8 @@ namespace TestingFloorSdk.Internal {
             if (replaced != null) Detach(replaced);
             id ??= NextId(kind);
 
-            var entry = new Entry(this, id, kind, transform, source) {
-                Deferred = HasPendingRemoval(id),
-            };
-            entry.Pending = entry.Read(out _);
+            var entry = new Entry(this, id, kind, transform, source);
+            entry.Pending = entry.Read(out _, out _);
             if (entry.Pending.HasValue) {
                 entry.HasObserved = true;
                 entry.LastObserved = entry.Pending.Value;
@@ -134,7 +147,7 @@ namespace TestingFloorSdk.Internal {
         public void Remove(Entry entry, string reason) {
             if (entry == null || !entry.Live) return;
             Detach(entry);
-            var final = entry.Read(out _);
+            var final = entry.Read(out _, out _);
             if (!final.HasValue && entry.HasObserved) final = entry.LastObserved;
             reason = string.IsNullOrWhiteSpace(reason) ? ReasonRemoved : reason.Trim();
             _removals.Add(new Removal(entry, reason, final));
@@ -155,20 +168,35 @@ namespace TestingFloorSdk.Internal {
             }
 
             _builder.Begin(records);
+
+            // Readers apply a record's samples before its removals. So once one lifetime of an id
+            // ends in this check, a later lifetime of that id waits for the next check, where it
+            // starts a new path instead of extending the old one.
+            _endedIds.Clear();
+            _carriedRemovals.Clear();
+            for (var i = 0; i < _removals.Count; i++) {
+                var removal = _removals[i];
+                if (_endedIds.Contains(removal.Entry.Id)) {
+                    _carriedRemovals.Add(removal);
+                    continue;
+                }
+                if (AppendRemoval(removal.Entry, removal.Reason, removal.Final)) _endedIds.Add(removal.Entry.Id);
+            }
+            _removals.Clear();
+            _removals.AddRange(_carriedRemovals);
+
             const float minDistanceSquared = MinSampleDistance * MinSampleDistance;
             for (var i = 0; i < _live.Count; i++) {
                 var entry = _live[i];
-                if (entry.Deferred) {
-                    entry.Deferred = false;
-                    continue;
-                }
+                if (!entry.HasSent && _endedIds.Contains(entry.Id)) continue;
 
-                var position = entry.Read(out var destroyed);
+                var position = entry.Read(out var destroyed, out var invalid);
+                if (invalid) continue;
                 if (!position.HasValue) {
                     Detach(entry);
                     i--;
                     var final = entry.HasObserved ? entry.LastObserved : (Vector3?)null;
-                    AppendRemoval(entry, destroyed ? ReasonDestroyed : ReasonGone, final);
+                    if (AppendRemoval(entry, destroyed ? ReasonDestroyed : ReasonGone, final)) _endedIds.Add(entry.Id);
                     continue;
                 }
 
@@ -189,22 +217,17 @@ namespace TestingFloorSdk.Internal {
                 _builder.EndGroup();
             }
 
-            for (var i = 0; i < _removals.Count; i++) {
-                var removal = _removals[i];
-                AppendRemoval(removal.Entry, removal.Reason, removal.Final);
-            }
-            _removals.Clear();
-
             _builder.End();
             return keyframe && records.Count > 0;
         }
 
-        void AppendRemoval(Entry entry, string reason, Vector3? final) {
+        // Returns whether the removal reached the record.
+        bool AppendRemoval(Entry entry, string reason, Vector3? final) {
             var pending = entry.Pending;
             entry.Pending = null;
             var sendFinal = final.HasValue && !(pending.HasValue && pending.Value == final.Value);
             // An object that never reached the wire has nothing to end.
-            if (!entry.HasSent && !pending.HasValue && !sendFinal) return;
+            if (!entry.HasSent && !pending.HasValue && !sendFinal) return false;
 
             _builder.BeginGroup();
             if (pending.HasValue) AppendSample(entry, pending.Value);
@@ -212,6 +235,7 @@ namespace TestingFloorSdk.Internal {
             AppendState(entry, full: false);
             _builder.AddRemoval(entry.Id, reason);
             _builder.EndGroup();
+            return true;
         }
 
         void AppendSample(Entry entry, Vector3 position) {

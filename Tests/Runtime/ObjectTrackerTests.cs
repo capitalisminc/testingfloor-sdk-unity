@@ -312,6 +312,49 @@ namespace TestingFloorSdk.Tests {
         }
 
         [Test]
+        public void ReplacementRemovedBeforeTheNextCheckEndsInALaterRecord() {
+            var tracker = new ObjectTracker();
+            var first = Register(tracker, "guard", new Point(Vector3.zero), id: "guard_a");
+            Check(tracker, 0);
+            tracker.Remove(first, "knocked_out");
+            var replacement = Register(tracker, "guard", new Point(new Vector3(9, 0, 0)), id: "guard_a");
+            tracker.Remove(replacement, "despawned");
+
+            var ending = Check(tracker, 0.25)[0];
+            CollectionAssert.AreEqual(new[] { 0.0 }, Numbers(ending, "sample.x"));
+            CollectionAssert.AreEqual(new[] { "knocked_out" }, Strings(ending, "removed.reason"));
+
+            var replacementPath = Check(tracker, 0.5)[0];
+            CollectionAssert.AreEqual(new[] { 9.0 }, Numbers(replacementPath, "sample.x"));
+            CollectionAssert.AreEqual(new[] { "despawned" }, Strings(replacementPath, "removed.reason"));
+        }
+
+        [Test]
+        public void NonfinitePositionIsSkippedWithoutEndingTheObject() {
+            var tracker = new ObjectTracker();
+            var crate = new Point(new Vector3(float.NaN, 0, 0));
+            Register(tracker, "crate", crate);
+            Assert.IsEmpty(Check(tracker, 0), "A NaN registration position is not sent");
+            Assert.AreEqual(1, tracker.LiveCount);
+
+            crate.Position = new Vector3(1, 0, 1);
+            CollectionAssert.AreEqual(new[] { 1.0 }, Numbers(Check(tracker, 0.25)[0], "sample.x"));
+
+            crate.Position = new Vector3(5, float.PositiveInfinity, 5);
+            Assert.IsEmpty(Check(tracker, 0.5), "An infinite position is skipped");
+            Assert.AreEqual(1, tracker.LiveCount, "and does not remove the object");
+
+            crate.Position = new Vector3(5, 0, 5);
+            var record = Check(tracker, 0.75)[0];
+            CollectionAssert.AreEqual(new[] { 5.0 }, Numbers(record, "sample.x"));
+            var ev = new TelemetryEvent("$tf_objects", record, ContextSnapshot.Create(default), "d", null, 0, "play", seq: 1, kind: RecordKind.Objects);
+            var json = System.Text.Encoding.UTF8.GetString(new JsonPayloadWriter().BuildBatch(new[] { ev }, "wk", "unused",
+                JsonPayloadWriter.CollectorBodyByteCap, JsonPayloadWriter.CollectorEventByteCap, null, out _, out _));
+            StringAssert.DoesNotContain("NaN", json);
+            StringAssert.DoesNotContain("Infinity", json);
+        }
+
+        [Test]
         public void PositionsAreRoundedToOneCentimetre() {
             var tracker = new ObjectTracker();
             Register(tracker, "crate", new Point(new Vector3(12.4149f, 0.004f, -3.336f)));
