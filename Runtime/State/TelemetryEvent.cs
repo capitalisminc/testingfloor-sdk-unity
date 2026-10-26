@@ -29,11 +29,12 @@ namespace TestingFloorSdk {
             string userId,
             long timestampMs,
             string sessionId,
+            TestingFloorRecording recording = null,
             long seq = 0,
             bool keyframe = false,
             RecordKind kind = RecordKind.Event) {
             Id = System.Guid.NewGuid();
-            Recording = TestingFloorRecording.Current;
+            Recording = recording ?? TestingFloorRecording.Current;
             EventType = eventType;
             EventProperties = eventProperties;
             Context = context;

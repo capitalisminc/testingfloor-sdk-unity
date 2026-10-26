@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.3.0 — Unreleased
+## 0.3.0
 
 Telemetry schema 2. Values that stay true for a while are sent once, when they
 change, instead of on every event, and objects other than the player get paths
@@ -24,6 +24,8 @@ on the map. Testing Floor reads schema 1 and schema 2 data the same way.
   GameObject while it is enabled and removes it with the reason `disabled`.
 - `objectSampleRateHz` (1–10, default 4) and `maxTrackedObjects` (default 256)
   settings.
+- Register each Play run with its recorder and close recording telemetry with an acknowledged flush marker.
+- Keep completion markers behind earlier batch acknowledgments, report dropped events, and detach later gameplay from stopped recordings.
 
 ### Changed
 

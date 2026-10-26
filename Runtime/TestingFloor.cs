@@ -16,7 +16,7 @@ namespace TestingFloorSdk {
         const string LevelKeyPrefix = "game_level.";
 
         static TestingFloorSettings _settings;
-        static IBatchSender _client;
+        static CollectorClient _client;
         static ITelemetryContextProvider _contextProvider;
         static ITelemetryContextProvider _stateProvider;
         static Dictionary<string, object> _directState = new(StringComparer.Ordinal);
@@ -74,6 +74,8 @@ namespace TestingFloorSdk {
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
         static void OnBeforeSceneLoad() {
             RegisterQuitHandler();
+            EnsureInitialized();
+
         }
 
         static void RegisterQuitHandler() {
@@ -92,11 +94,9 @@ namespace TestingFloorSdk {
 
         static void OnEditorPlayModeStateChanged(PlayModeStateChange state) {
             if (state != PlayModeStateChange.ExitingPlayMode) return;
-            // Drain pending events before the editor tears down the runtime.
-            // The next Play start will get a fresh PlaySessionId (via
-            // ResetStatics) so any late events from this Play that didn't make
-            // it out are lost — that's intentional.
-            _ = FlushAsync(TimeSpan.FromSeconds(QuitFlushTimeoutSeconds));
+            // Bound the final flush before Unity destroys this Play runtime.
+            // A failed flush leaves no successful completion marker.
+            FinishRecordingAndFlush();
         }
 #endif
 
@@ -358,8 +358,10 @@ namespace TestingFloorSdk {
                 return false;
             }
 
+            RecordingTelemetry.Poll();
             // A state change is queued before the event it applies to.
             PollState(Time.unscaledTimeAsDouble);
+
 
             var context = BuildContext();
             RememberLevel(context.Properties, eventProperties);
@@ -571,6 +573,11 @@ namespace TestingFloorSdk {
             _client = new CollectorClient(_settings);
             _state = TelemetryState.Ok;
             _initialized = true;
+            if (RecordingTelemetry.Register(TestingFloorRecording.Current, PlaySessionId)) {
+                var driver = new GameObject("[TestingFloor.RecordingTelemetry]");
+                UnityEngine.Object.DontDestroyOnLoad(driver);
+                driver.AddComponent<RecordingTelemetryDriver>();
+            }
         }
 
         static IBatchSender GetClient() => _client;
@@ -586,9 +593,20 @@ namespace TestingFloorSdk {
             };
         }
 
+        internal static void EnqueueRecordingCompletion(TestingFloorRecording recording, string session) {
+            var marker = new TelemetryEvent("$tf_telemetry_complete", new Dictionary<string, object>(),
+                ContextSnapshot.Create(_platformContext), Identity.DeviceId, Identity.ProfileId,
+                DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), session, recording, seq: _seq + 1);
+            Enqueue(marker);
+        }
+
+        static void FinishRecordingAndFlush() {
+            RecordingTelemetry.Finish();
+            TelemetryQueue.FlushBlocking(TimeSpan.FromSeconds(QuitFlushTimeoutSeconds), _client, _settings);
+        }
+
         static void OnApplicationQuitting() {
-            if (!TelemetryQueue.HasPending()) return;
-            _ = FlushAsync(TimeSpan.FromSeconds(QuitFlushTimeoutSeconds));
+            FinishRecordingAndFlush();
         }
     }
 }

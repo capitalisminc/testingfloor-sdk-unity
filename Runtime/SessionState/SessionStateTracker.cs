@@ -33,7 +33,7 @@ namespace TestingFloorSdk.Internal {
 
             if (!string.Equals(recordingUuid, _recordingUuid, StringComparison.Ordinal)) {
                 _recordingUuid = recordingUuid;
-                _keyframeDue = true;
+                if (recordingUuid != null) _keyframeDue = true;
             }
             if (_sentAny && now - _lastKeyframeAt >= KeyframeIntervalSeconds) {
                 _keyframeDue = true;

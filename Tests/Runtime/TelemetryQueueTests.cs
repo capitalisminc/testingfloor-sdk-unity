@@ -104,6 +104,109 @@ namespace TestingFloorSdk.Tests {
             await Until(() => !TelemetryQueue.HasPending());
         }
 
+        [Test]
+        public async Task CompletionWaitsForPriorAcknowledgmentAndOwnsItsRequest() {
+            _settings.batchMaxEvents = 50;
+            var first = new TaskCompletionSource<BatchSendOutcome>();
+            var batches = new List<List<string>>();
+            var sender = new BarrierSender {
+                Respond = events => {
+                    batches.Add(new List<string>());
+                    foreach (var ev in events) batches[batches.Count - 1].Add(ev.EventType);
+                    return batches.Count == 1 ? first.Task : Task.FromResult(new BatchSendOutcome(SendResult.Success, events.Count));
+                }
+            };
+            TelemetryQueue.Enqueue(Event("gameplay"), _settings, () => sender, null);
+            await Until(() => batches.Count == 1);
+            var marker = new TelemetryEvent("$tf_telemetry_complete", new Dictionary<string, object>(), ContextSnapshot.Create(default), null, null, 0, "example-play");
+            TelemetryQueue.Enqueue(marker, _settings, () => sender, null);
+            TelemetryQueue.Enqueue(Event("later"), _settings, () => sender, null);
+            Assert.AreEqual(1, batches.Count, "No marker request while gameplay is unacknowledged");
+            first.SetResult(new BatchSendOutcome(SendResult.Success, 1));
+            await Until(() => !TelemetryQueue.HasPending());
+            CollectionAssert.AreEqual(new[] { "$tf_telemetry_complete" }, batches[1]);
+            CollectionAssert.AreEqual(new[] { "later" }, batches[2]);
+        }
+
+        [Test]
+        public async Task BlockingShutdownTakesOverTheInflightRequestWithoutResendingIt() {
+            var pending = new TaskCompletionSource<BatchSendOutcome>();
+            var sender = new BlockingSender { Pending = pending };
+            TelemetryQueue.Enqueue(Event("gameplay"), _settings, () => sender, null);
+            var marker = new TelemetryEvent("$tf_telemetry_complete", new Dictionary<string, object>(), ContextSnapshot.Create(default), null, null, 0, "example-play");
+            TelemetryQueue.Enqueue(marker, _settings, () => sender, null);
+            TelemetryQueue.FlushBlocking(TimeSpan.FromSeconds(1), sender, _settings);
+            Assert.AreEqual(1, sender.AsyncRequests);
+            Assert.AreEqual(1, sender.Completions);
+            CollectionAssert.AreEqual(new[] { "$tf_telemetry_complete" }, sender.BlockingNames);
+            Assert.AreEqual(0, TelemetryQueue.PendingEventCount);
+            pending.SetResult(new BatchSendOutcome(SendResult.Success, 1));
+            await Task.Delay(20);
+            Assert.AreEqual(0, TelemetryQueue.PendingEventCount, "Old continuation cannot consume the new queue");
+        }
+
+        [Test]
+        public void BlockingShutdownSendsGatheredEventsInsteadOfConsumingAnOlderResponse() {
+            _settings.batchMaxEvents = 50;
+            _settings.batchMaxFlushIntervalSeconds = 1000;
+            var sender = new BlockingSender { Pending = new TaskCompletionSource<BatchSendOutcome>() };
+            TelemetryQueue.Enqueue(Event("gameplay"), _settings, () => sender, null);
+            TelemetryQueue.FlushBlocking(TimeSpan.FromSeconds(1), sender, _settings);
+            Assert.AreEqual(0, sender.AsyncRequests);
+            Assert.AreEqual(0, sender.Completions);
+            CollectionAssert.AreEqual(new[] { "gameplay" }, sender.BlockingNames);
+            Assert.AreEqual(0, TelemetryQueue.PendingEventCount);
+        }
+
+        sealed class BlockingSender : IBlockingBatchSender {
+            internal TaskCompletionSource<BatchSendOutcome> Pending;
+            internal int AsyncRequests;
+            internal int Completions;
+            internal List<string> BlockingNames = new();
+            public async ValueTask<BatchSendOutcome> TrackBatchAsync(IReadOnlyList<TelemetryEvent> events) {
+                AsyncRequests++;
+                return await Pending.Task;
+            }
+            public BatchSendOutcome CompletePendingBlocking(DateTime deadline) {
+                Completions++;
+                return new BatchSendOutcome(SendResult.Success, 1);
+            }
+            public BatchSendOutcome TrackBatchBlocking(IReadOnlyList<TelemetryEvent> events, DateTime deadline) {
+                foreach (var ev in events) BlockingNames.Add(ev.EventType);
+                return new BatchSendOutcome(SendResult.Success, events.Count);
+            }
+        }
+
+        [TestCase(true)]
+        [TestCase(false)]
+        public async Task CompletionLossCountOnlyIncludesItsRecording(bool lostDuringRecording) {
+            _settings.queueMaxEvents = 1;
+            var recording = new TestingFloorRecording("example-recording", null, true);
+            var first = new TaskCompletionSource<BatchSendOutcome>();
+            var calls = 0;
+            var markerLoss = -1;
+            var sender = new BarrierSender { Respond = events => {
+                calls++;
+                if (calls == 1) return first.Task;
+                markerLoss = Convert.ToInt32(events[0].EventProperties["dropped_events"]);
+                return Task.FromResult(new BatchSendOutcome(SendResult.Success, events.Count));
+            }};
+            var gameplay = new TelemetryEvent("gameplay", null, ContextSnapshot.Create(default), null, null, 0, "example-play", recording);
+            TelemetryQueue.Enqueue(gameplay, _settings, () => sender, null);
+            if (lostDuringRecording) Assert.IsFalse(TelemetryQueue.Enqueue(gameplay, _settings, () => sender, null));
+            var marker = new TelemetryEvent("$tf_telemetry_complete", new Dictionary<string, object>(), ContextSnapshot.Create(default), null, null, 0, "example-play", recording);
+            TelemetryQueue.Enqueue(marker, _settings, () => sender, null);
+            if (!lostDuringRecording) Assert.IsFalse(TelemetryQueue.Enqueue(Event("after_recording"), _settings, () => sender, null));
+            first.SetResult(new BatchSendOutcome(SendResult.Success, 1));
+            await Until(() => !TelemetryQueue.HasPending());
+            Assert.AreEqual(lostDuringRecording ? 1 : 0, markerLoss);
+        }
+
+        sealed class BarrierSender : IBatchSender {
+            internal Func<IReadOnlyList<TelemetryEvent>, Task<BatchSendOutcome>> Respond;
+            public async ValueTask<BatchSendOutcome> TrackBatchAsync(IReadOnlyList<TelemetryEvent> events) => await Respond(events);
+        }
+
         [TestCase(401, (int)SendResult.Rejected)]
         [TestCase(403, (int)SendResult.Rejected)]
         [TestCase(400, (int)SendResult.InvalidRequest)]
