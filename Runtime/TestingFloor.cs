@@ -451,7 +451,11 @@ namespace TestingFloorSdk {
             for (var i = 0; i < s_objectRecords.Count; i++) {
                 var properties = s_objectRecords[i];
                 foreach (var kvp in _levelValues) properties[kvp.Key] = kvp.Value;
-                QueueRecord(RecordKind.Objects, ObjectsRecordName, properties, keyframe, timestampMs);
+                var removals = ObjectTracker.RemovalsIn(properties);
+                if (QueueRecord(RecordKind.Objects, ObjectsRecordName, properties, keyframe, timestampMs)) continue;
+                // Removals that do not fit the retry backlog are lost like any dropped record.
+                var overflow = _objects.Retry(removals);
+                if (overflow > 0) TelemetryQueue.CountDropped(overflow, recording: TestingFloorRecording.Current != null);
             }
             s_objectRecords.Clear();
         }
@@ -608,7 +612,14 @@ namespace TestingFloorSdk {
             Enqueue(marker);
         }
 
-        static void FinishRecordingAndFlush() {
+        internal static void FinishRecordingAndFlush() {
+            // The last state change and object movement go out before the completion marker,
+            // while they still carry the recording.
+            if (IsCollecting) {
+                var now = Time.unscaledTimeAsDouble;
+                PollState(now);
+                CheckObjects(now);
+            }
             RecordingTelemetry.Finish();
             TelemetryQueue.FlushBlocking(TimeSpan.FromSeconds(QuitFlushTimeoutSeconds), _client, _settings);
         }

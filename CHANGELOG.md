@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.4.2
+
+### Fixed
+
+- An object removal in a `$tf_objects` record that the queue refused was lost,
+  and Testing Floor ends an object's path only on a removal, so the object
+  stayed on the map. Refused removals now wait and go out at the next check,
+  with their final position. At most `maxTrackedObjects` wait; any beyond that
+  count toward `dropped_events` and trigger the next keyframe.
+- Quitting or leaving Play mode now sends the last session state change and
+  object movement before the recording completion marker. Before, changes
+  after the last once-a-second poll were lost.
+
 ## 0.4.1
 
 ### Fixed

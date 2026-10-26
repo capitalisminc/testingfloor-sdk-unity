@@ -79,6 +79,21 @@ namespace TestingFloorSdk.Internal {
                 !float.IsNaN(v.z) && !float.IsInfinity(v.z);
         }
 
+        // A removal from a record that the queue refused, to send again.
+        internal readonly struct RetriedRemoval {
+            public readonly string Id;
+            public readonly string Kind;
+            public readonly string Reason;
+            public readonly Vector3? Final;
+
+            public RetriedRemoval(string id, string kind, string reason, Vector3? final) {
+                Id = id;
+                Kind = kind;
+                Reason = reason;
+                Final = final;
+            }
+        }
+
         readonly struct Removal {
             public readonly Entry Entry;
             public readonly string Reason;
@@ -96,6 +111,8 @@ namespace TestingFloorSdk.Internal {
         readonly Dictionary<string, int> _kindCounts = new(StringComparer.Ordinal);
         readonly List<Removal> _removals = new();
         readonly List<Removal> _carriedRemovals = new();
+        readonly List<RetriedRemoval> _retries = new();
+        readonly List<RetriedRemoval> _carriedRetries = new();
         readonly HashSet<string> _endedIds = new(StringComparer.Ordinal);
         readonly ObjectRecordBuilder _builder = new();
         double _lastKeyframeAt = double.NaN;
@@ -106,6 +123,7 @@ namespace TestingFloorSdk.Internal {
         internal bool LogErrors;
 
         internal int LiveCount => _live.Count;
+        internal int RetryCount => _retries.Count;
 
         public void RequestKeyframe() {
             _keyframeDue = true;
@@ -158,6 +176,51 @@ namespace TestingFloorSdk.Internal {
         /// more `$tf_objects` records to <paramref name="records"/>. Returns
         /// whether the records are a keyframe.
         /// </summary>
+        /// <summary>
+        /// The removals in a `$tf_objects` record's properties, with each removed object's final
+        /// sample from the same record. Null when the record has none. Read them before queueing:
+        /// a refused record's properties go back to the pool.
+        /// </summary>
+        internal static List<RetriedRemoval> RemovalsIn(Dictionary<string, object> properties) {
+            if (!properties.TryGetValue("removed.id", out var value) || value is not string[] ids || ids.Length == 0) return null;
+            var reasons = properties.TryGetValue("removed.reason", out var r) ? r as string[] : null;
+            var sampleIds = properties.TryGetValue("sample.id", out var si) ? si as string[] : null;
+            var kinds = properties.TryGetValue("sample.kind", out var sk) ? sk as string[] : null;
+            var xs = properties.TryGetValue("sample.x", out var sx) ? sx as double[] : null;
+            var ys = properties.TryGetValue("sample.y", out var sy) ? sy as double[] : null;
+            var zs = properties.TryGetValue("sample.z", out var sz) ? sz as double[] : null;
+            var removals = new List<RetriedRemoval>(ids.Length);
+            for (var i = 0; i < ids.Length; i++) {
+                string kind = null;
+                Vector3? final = null;
+                if (sampleIds != null && kinds != null && xs != null && ys != null && zs != null) {
+                    for (var s = sampleIds.Length - 1; s >= 0; s--) {
+                        if (!string.Equals(sampleIds[s], ids[i], StringComparison.Ordinal)) continue;
+                        kind = kinds[s];
+                        final = new Vector3((float)xs[s], (float)ys[s], (float)zs[s]);
+                        break;
+                    }
+                }
+                removals.Add(new RetriedRemoval(ids[i], kind, reasons != null && i < reasons.Length ? reasons[i] : ReasonRemoved, final));
+            }
+            return removals;
+        }
+
+        /// <summary>
+        /// Keeps the removals of a record that the queue refused, to send again at the next
+        /// check. Readers end a path only on a removal, so a lost one would leave the object on
+        /// the map. At most <see cref="MaxLiveObjects"/> wait; returns how many did not fit.
+        /// </summary>
+        public int Retry(List<RetriedRemoval> removals) {
+            if (removals == null) return 0;
+            var overflow = 0;
+            foreach (var removal in removals) {
+                if (_retries.Count >= Math.Max(1, MaxLiveObjects)) overflow++;
+                else _retries.Add(removal);
+            }
+            return overflow;
+        }
+
         public bool Check(double now, List<Dictionary<string, object>> records) {
             if (double.IsNaN(_lastKeyframeAt)) _lastKeyframeAt = now;
             if (now - _lastKeyframeAt >= KeyframeIntervalSeconds) _keyframeDue = true;
@@ -173,6 +236,22 @@ namespace TestingFloorSdk.Internal {
             // ends in this check, a later lifetime of that id waits for the next check, where it
             // starts a new path instead of extending the old one.
             _endedIds.Clear();
+            _carriedRetries.Clear();
+            for (var i = 0; i < _retries.Count; i++) {
+                var retry = _retries[i];
+                if (_endedIds.Contains(retry.Id)) {
+                    _carriedRetries.Add(retry);
+                    continue;
+                }
+                _builder.BeginGroup();
+                if (retry.Final.HasValue && retry.Kind != null) _builder.AddSample(retry.Id, retry.Kind, retry.Final.Value);
+                _builder.AddRemoval(retry.Id, retry.Reason);
+                _builder.EndGroup();
+                _endedIds.Add(retry.Id);
+            }
+            _retries.Clear();
+            _retries.AddRange(_carriedRetries);
+
             _carriedRemovals.Clear();
             for (var i = 0; i < _removals.Count; i++) {
                 var removal = _removals[i];

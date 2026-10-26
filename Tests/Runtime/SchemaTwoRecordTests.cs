@@ -269,6 +269,86 @@ namespace TestingFloorSdk.Tests {
             CollectionAssert.AreEqual(new[] { "crate#1" }, (string[])_records[1].EventProperties["sample.id"]);
         }
 
+        void RefuseFirstRemovalRecord() {
+            var refused = false;
+            global::TestingFloorSdk.TestingFloor.CaptureRecordsForTesting(ev => {
+                if (!refused && ev.EventType == "$tf_objects" && ev.EventProperties.ContainsKey("removed.id")) {
+                    refused = true;
+                    return false;
+                }
+                _records.Add(ev);
+                return true;
+            }, _settings);
+        }
+
+        [Test]
+        public void RefusedRemovalIsSentAgainAtTheNextCheck() {
+            RefuseFirstRemovalRecord();
+            var position = new Vector3(1, 0, 1);
+            var crate = global::TestingFloorSdk.TestingFloor.TrackObject("crate", () => position);
+            global::TestingFloorSdk.TestingFloor.Tick(0);
+            position = new Vector3(2, 0, 2);
+            crate.Remove("destroyed");
+            global::TestingFloorSdk.TestingFloor.Tick(1);
+            Assert.IsFalse(_records.Any(r => r.EventProperties.ContainsKey("removed.id")), "The queue refused the removal");
+
+            global::TestingFloorSdk.TestingFloor.Tick(2);
+            var retried = _records.Last();
+            Assert.AreEqual("$tf_objects", retried.EventType);
+            CollectionAssert.AreEqual(new[] { "crate#1" }, (string[])retried.EventProperties["removed.id"]);
+            CollectionAssert.AreEqual(new[] { "destroyed" }, (string[])retried.EventProperties["removed.reason"]);
+            CollectionAssert.AreEqual(new[] { 2.0 }, (double[])retried.EventProperties["sample.x"], "The final position goes with it");
+        }
+
+        [Test]
+        public void RefusedRemovalsBeyondTheCapAreDroppedAndCounted() {
+            RefuseFirstRemovalRecord();
+            _settings.maxTrackedObjects = 3;
+            var objects = new[] {
+                global::TestingFloorSdk.TestingFloor.TrackObject("crate", () => Vector3.one, "crate_a"),
+                global::TestingFloorSdk.TestingFloor.TrackObject("crate", () => Vector3.one, "crate_b"),
+                global::TestingFloorSdk.TestingFloor.TrackObject("crate", () => Vector3.one, "crate_c"),
+            };
+            global::TestingFloorSdk.TestingFloor.Tick(0);
+            _settings.maxTrackedObjects = 2;
+            foreach (var tracked in objects) tracked.Remove("destroyed");
+            global::TestingFloorSdk.TestingFloor.Tick(1);
+            Assert.AreEqual(1, TelemetryQueue.DroppedEventCount, "The removal past the cap counts as dropped");
+
+            global::TestingFloorSdk.TestingFloor.Tick(2);
+            CollectionAssert.AreEqual(new[] { "crate_a", "crate_b" }, (string[])_records.Last(r => r.EventType == "$tf_objects").EventProperties["removed.id"]);
+        }
+
+        [Test]
+        public void QuitSendsTheLastStateAndObjectChangesBeforeTheCompletionMarker() {
+            var directory = System.IO.Path.Combine(System.IO.Path.GetTempPath(), Guid.NewGuid().ToString());
+            System.IO.Directory.CreateDirectory(directory);
+            try {
+                var recording = new TestingFloorRecording("example-recording", null, true, directory);
+                TestingFloorRecording.UseForTesting(recording);
+                Assert.IsTrue(RecordingTelemetry.Register(recording, global::TestingFloorSdk.TestingFloor.PlaySessionId));
+                var position = Vector3.one;
+                global::TestingFloorSdk.TestingFloor.SetState("difficulty", "normal");
+                global::TestingFloorSdk.TestingFloor.TrackObject("crate", () => position);
+                global::TestingFloorSdk.TestingFloor.Track("level_started").Send();
+                global::TestingFloorSdk.TestingFloor.Tick(0);
+                _records.Clear();
+
+                global::TestingFloorSdk.TestingFloor.SetState("difficulty", "hard");
+                position = new Vector3(4, 0, 4);
+                global::TestingFloorSdk.TestingFloor.FinishRecordingAndFlush();
+
+                CollectionAssert.AreEqual(new[] { "$tf_state", "$tf_objects", "$tf_telemetry_complete" }, Names());
+                Assert.AreEqual("hard", _records[0].EventProperties["difficulty"]);
+                Assert.AreSame(recording, _records[0].Recording);
+                Assert.AreSame(recording, _records[1].Recording);
+            }
+            finally {
+                RecordingTelemetry.ResetStatics();
+                System.IO.Directory.Delete(directory, true);
+            }
+        }
+
         [Test]
         public void DisabledCollectionReturnsAHandleThatDoesNothing() {
             global::TestingFloorSdk.TestingFloor.ResetForTesting();
