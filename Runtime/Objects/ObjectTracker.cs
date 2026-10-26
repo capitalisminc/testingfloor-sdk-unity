@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Text;
 using UnityEngine;
 
 namespace TestingFloorSdk.Internal {
@@ -245,11 +246,17 @@ namespace TestingFloorSdk.Internal {
             return false;
         }
 
+        // Skips ids that a live object or a pending removal already uses, such as an
+        // explicit `guard#1`, so two objects never share one path.
         string NextId(string kind) {
             _kindCounts.TryGetValue(kind, out var count);
-            count++;
+            string id;
+            do {
+                count++;
+                id = kind + "#" + count;
+            } while (_byId.ContainsKey(id) || HasPendingRemoval(id));
             _kindCounts[kind] = count;
-            return kind + "#" + count;
+            return id;
         }
     }
 
@@ -260,7 +267,8 @@ namespace TestingFloorSdk.Internal {
     /// </summary>
     internal sealed class ObjectRecordBuilder {
         const int RecordByteBudget = 20 * 1024;
-        const int NumberBytes = 12;
+        const int CoordinateBytes = 12;
+        const int NumberBytes = 25;
 
         readonly List<string> _sampleIds = new();
         readonly List<string> _sampleKinds = new();
@@ -297,20 +305,20 @@ namespace TestingFloorSdk.Internal {
             _xs.Add(Round(position.x));
             _ys.Add(Round(position.y));
             _zs.Add(Round(position.z));
-            _bytes += id.Length + kind.Length + 3 * NumberBytes + 8;
+            _bytes += JsonStringBytes(id) + JsonStringBytes(kind) + 3 * CoordinateBytes;
         }
 
         public void AddState(string id, string key, object value) {
             _stateIds.Add(id);
             _stateKeys.Add(key);
             _stateValues.Add(value);
-            _bytes += id.Length + key.Length + (value is string s ? s.Length + 2 : NumberBytes) + 8;
+            _bytes += JsonStringBytes(id) + JsonStringBytes(key) + (value is string s ? JsonStringBytes(s) : NumberBytes) + 2;
         }
 
         public void AddRemoval(string id, string reason) {
             _removedIds.Add(id);
             _removedReasons.Add(reason);
-            _bytes += id.Length + reason.Length + 8;
+            _bytes += JsonStringBytes(id) + JsonStringBytes(reason) + 1;
         }
 
         public void EndGroup() {
@@ -357,6 +365,18 @@ namespace TestingFloorSdk.Internal {
         }
 
         static double Round(float value) => Math.Round(value * 100.0) / 100.0;
+
+        // Serialized size of a JSON string value: UTF-8 bytes, the quotes, a comma, and the
+        // escapes the writer adds for quotes, backslashes and control characters.
+        internal static int JsonStringBytes(string value) {
+            var bytes = Encoding.UTF8.GetByteCount(value) + 3;
+            for (var i = 0; i < value.Length; i++) {
+                var ch = value[i];
+                if (ch == '"' || ch == '\\') bytes += 1;
+                else if (ch < ' ') bytes += 5;
+            }
+            return bytes;
+        }
 
         void Clear() {
             _sampleIds.Clear();

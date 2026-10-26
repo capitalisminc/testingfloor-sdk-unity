@@ -242,6 +242,44 @@ namespace TestingFloorSdk.Tests {
         }
 
         [Test]
+        public void RecordsStayUnderTheCollectorCapWithMultiByteState() {
+            var tracker = new ObjectTracker();
+            var label = new string('\u8B66', 100);
+            for (var i = 0; i < ObjectTracker.DefaultMaxLiveObjects; i++) {
+                var guard = Register(tracker, "guard", new Point(new Vector3(i, 0, i)));
+                tracker.SetState(guard, "label", label + i);
+            }
+
+            var records = Check(tracker, 0);
+            Assert.Greater(records.Count, 1, "Multi-byte state must split the check into several records");
+            var samples = 0;
+            foreach (var record in records) {
+                samples += Strings(record, "sample.id").Length;
+                var ev = new TelemetryEvent("$tf_objects", record, ContextSnapshot.Create(default), "d", null, 0, "play", seq: 1, kind: RecordKind.Objects);
+                var bytes = new JsonPayloadWriter().BuildBatch(new[] { ev }, "wk", "unused",
+                    JsonPayloadWriter.CollectorBodyByteCap, JsonPayloadWriter.CollectorEventByteCap, null, out _, out var written);
+                Assert.AreEqual(1, written, $"A record of {bytes.Length} bytes was dropped as oversized");
+            }
+            Assert.AreEqual(ObjectTracker.DefaultMaxLiveObjects, samples);
+        }
+
+        [Test]
+        public void GeneratedIdsSkipIdsAlreadyInUse() {
+            var tracker = new ObjectTracker();
+            var explicitGuard = Register(tracker, "guard", new Point(Vector3.zero), id: "guard#1");
+            var generated = Register(tracker, "guard", new Point(Vector3.one));
+
+            Assert.AreEqual("guard#2", generated.Id);
+            Assert.IsTrue(explicitGuard.Live);
+            Assert.AreEqual(2, tracker.LiveCount);
+            CollectionAssert.AreEqual(new[] { "guard#1", "guard#2" }, Strings(Check(tracker, 0)[0], "sample.id"));
+
+            var removed = Register(tracker, "guard", new Point(Vector3.zero), id: "guard#3");
+            tracker.Remove(removed, "knocked_out");
+            Assert.AreEqual("guard#4", Register(tracker, "guard", new Point(Vector3.zero)).Id, "A pending removal still holds its id");
+        }
+
+        [Test]
         public void RegistrationsBeyondTheCapAreIgnoredWithOneWarning() {
             var tracker = new ObjectTracker();
             for (var i = 0; i < ObjectTracker.DefaultMaxLiveObjects; i++) {
