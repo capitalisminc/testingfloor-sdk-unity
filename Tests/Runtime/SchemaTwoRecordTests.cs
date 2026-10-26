@@ -483,6 +483,42 @@ namespace TestingFloorSdk.Tests {
         }
 
         [Test]
+        public void RecordingCloseSeenDuringAnObjectCheckWaitsForTheCheckToFinish() {
+            var directory = System.IO.Path.Combine(System.IO.Path.GetTempPath(), Guid.NewGuid().ToString());
+            System.IO.Directory.CreateDirectory(directory);
+            try {
+                var recording = new TestingFloorRecording("example-recording", null, true, directory);
+                TestingFloorRecording.UseForTesting(recording);
+                Assert.IsTrue(global::TestingFloorSdk.TestingFloor.RegisterRecording(recording));
+                global::TestingFloorSdk.TestingFloor.TrackObject("crate", () => Vector3.one, "crate_a");
+                global::TestingFloorSdk.TestingFloor.TrackObject("crate", () => {
+                    global::TestingFloorSdk.TestingFloor.Track("crate_sampled").Send();
+                    return Vector3.zero;
+                }, "crate_b");
+                _records.Clear();
+
+                // The recorder closes the recording, and the first poll to see it comes from the
+                // second crate's callback, in the middle of an object check.
+                System.IO.File.WriteAllText(System.IO.Path.Combine(directory, "closed.json"), "1");
+                global::TestingFloorSdk.TestingFloor.Tick(0);
+                RecordingTelemetry.Poll();
+
+                var names = Names();
+                var marker = Array.IndexOf(names, "$tf_telemetry_complete");
+                Assert.GreaterOrEqual(marker, 0);
+                var sampled = _records.Take(marker)
+                    .Where(r => r.EventType == "$tf_objects" && r.EventProperties.ContainsKey("sample.id"))
+                    .SelectMany(r => (string[])r.EventProperties["sample.id"]).ToList();
+                CollectionAssert.AreEquivalent(new[] { "crate_a", "crate_b" }, sampled.Distinct(), "No sample of the active check is lost");
+                Assert.IsTrue(_records.Take(marker).All(r => r.Recording == recording));
+            }
+            finally {
+                RecordingTelemetry.ResetStatics();
+                System.IO.Directory.Delete(directory, true);
+            }
+        }
+
+        [Test]
         public async Task RemovalRefusedAtRecordingCloseCountsTowardTheMarker() {
             var directory = System.IO.Path.Combine(System.IO.Path.GetTempPath(), Guid.NewGuid().ToString());
             System.IO.Directory.CreateDirectory(directory);

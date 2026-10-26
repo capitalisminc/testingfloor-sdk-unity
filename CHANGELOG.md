@@ -11,6 +11,11 @@
   and checks objects, as it does on quit, before it queues the marker. Those
   records carry the recording and take earlier `$tf.seq` values, and one the
   queue refuses counts toward the marker's `dropped_events`.
+- An event that a state provider or position callback sends while the SDK
+  polls state or checks objects no longer polls state again or closes the
+  recording in the middle of that work. A state provider that sent events
+  could recurse without end, and a close seen mid-check could discard that
+  check's samples.
 
 ## 0.4.2
 

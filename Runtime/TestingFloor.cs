@@ -32,6 +32,7 @@ namespace TestingFloorSdk {
         static long _lastObjectsTimestampMs;
         static Func<TelemetryEvent, bool> s_captureForTesting;
         static IBatchSender s_senderForTesting;
+        static int s_bufferingDepth;
         static Func<Vector3?> _positionSource;
         static Func<Camera> _cameraSource;
         static PlatformContext _platformContext;
@@ -62,6 +63,7 @@ namespace TestingFloorSdk {
             _lastObjectsTimestampMs = 0;
             s_captureForTesting = null;
             s_senderForTesting = null;
+            s_bufferingDepth = 0;
             _positionSource = null;
             _cameraSource = null;
             _platformContext = default;
@@ -364,9 +366,14 @@ namespace TestingFloorSdk {
                 return false;
             }
 
-            RecordingTelemetry.Poll();
-            // A state change is queued before the event it applies to.
-            PollState(Time.unscaledTimeAsDouble);
+            // An event that a state provider or position callback sends while the SDK polls state or
+            // checks objects neither polls them again nor closes the recording; the active poll or
+            // check finishes first, and the next poll closes the recording.
+            if (s_bufferingDepth == 0) {
+                RecordingTelemetry.Poll();
+                // A state change is queued before the event it applies to.
+                PollState(Time.unscaledTimeAsDouble);
+            }
 
 
             var context = BuildContext();
@@ -414,6 +421,16 @@ namespace TestingFloorSdk {
         }
 
         static void PollState(double now) {
+            s_bufferingDepth++;
+            try {
+                PollStateNow(now);
+            }
+            finally {
+                s_bufferingDepth--;
+            }
+        }
+
+        static void PollStateNow(double now) {
             var snapshot = ContextSnapshot.Create(default);
             try {
                 BuiltInContextProvider.FillState(ref snapshot);
@@ -443,6 +460,16 @@ namespace TestingFloorSdk {
 
         // Returns whether the queue refused any of the check's records.
         static bool CheckObjects(double now) {
+            s_bufferingDepth++;
+            try {
+                return CheckObjectsNow(now);
+            }
+            finally {
+                s_bufferingDepth--;
+            }
+        }
+
+        static bool CheckObjectsNow(double now) {
             // A Play run that joins a new recording repeats every live object, as state does.
             var recordingUuid = TestingFloorRecording.Current?.RecordingUuid;
             if (!string.Equals(recordingUuid, _objectsRecordingUuid, StringComparison.Ordinal)) {
