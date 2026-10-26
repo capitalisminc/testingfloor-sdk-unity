@@ -7,11 +7,14 @@ namespace TestingFloorSdk.Internal {
         static TestingFloorRecording _recording;
         static string _session;
         static Action<TestingFloorRecording, string> _onComplete;
+        static Action _beforeClose;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
-        internal static void ResetStatics() { _recording = null; _session = null; _onComplete = null; }
+        internal static void ResetStatics() { _recording = null; _session = null; _onComplete = null; _beforeClose = null; }
 
-        internal static bool Register(TestingFloorRecording recording, string session, Action<TestingFloorRecording, string> onComplete = null) {
+        // `beforeClose` runs when the recorder closes the recording, while it is still open, so
+        // records buffered until then go out with it, ahead of its completion marker.
+        internal static bool Register(TestingFloorRecording recording, string session, Action<TestingFloorRecording, string> onComplete = null, Action beforeClose = null) {
             if (recording == null || string.IsNullOrWhiteSpace(recording.TelemetryDirectory)) return false;
             try {
                 if (File.Exists(Path.Combine(recording.TelemetryDirectory, "closed.json"))) { recording.Closed = true; return false; }
@@ -22,14 +25,17 @@ namespace TestingFloorSdk.Internal {
                 _recording = recording;
                 _session = session;
                 _onComplete = onComplete ?? TestingFloor.EnqueueRecordingCompletion;
+                _beforeClose = beforeClose;
                 Poll();
                 return true;
             } catch (Exception) { recording.Closed = true; return false; }
         }
 
         internal static void Poll() {
-            if (_recording != null && !_recording.Closed &&
-                File.Exists(Path.Combine(_recording.TelemetryDirectory, "closed.json"))) Finish();
+            if (_recording == null || _recording.Closed ||
+                !File.Exists(Path.Combine(_recording.TelemetryDirectory, "closed.json"))) return;
+            _beforeClose?.Invoke();
+            Finish();
         }
 
         internal static void Finish() {

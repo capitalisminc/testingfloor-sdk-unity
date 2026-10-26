@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.4.3
+
+### Fixed
+
+- When the recorder closed a recording mid-session, the SDK queued the
+  completion marker first, so a session state change or object removal still
+  waiting for the next poll or check went out afterwards without the
+  recording's UUID, and the marker reported no loss. The SDK now polls state
+  and checks objects, as it does on quit, before it queues the marker. Those
+  records carry the recording and take earlier `$tf.seq` values, and one the
+  queue refuses counts toward the marker's `dropped_events`.
+
 ## 0.4.2
 
 ### Fixed

@@ -31,6 +31,7 @@ namespace TestingFloorSdk {
         static string _objectsRecordingUuid;
         static long _lastObjectsTimestampMs;
         static Func<TelemetryEvent, bool> s_captureForTesting;
+        static IBatchSender s_senderForTesting;
         static Func<Vector3?> _positionSource;
         static Func<Camera> _cameraSource;
         static PlatformContext _platformContext;
@@ -60,6 +61,7 @@ namespace TestingFloorSdk {
             _objectsRecordingUuid = null;
             _lastObjectsTimestampMs = 0;
             s_captureForTesting = null;
+            s_senderForTesting = null;
             _positionSource = null;
             _cameraSource = null;
             _platformContext = default;
@@ -535,6 +537,19 @@ namespace TestingFloorSdk {
             s_captureForTesting = capture;
         }
 
+        /// <summary>
+        /// Test seam: deliver records through the real queue to <paramref name="sender"/>.
+        /// Automated tests never send live telemetry.
+        /// </summary>
+        internal static void QueueRecordsForTesting(IBatchSender sender, TestingFloorSettings settings) {
+            ResetStatics();
+            TelemetryQueue.ResetStatics();
+            _settings = settings;
+            _state = TelemetryState.Ok;
+            _initialized = true;
+            s_senderForTesting = sender;
+        }
+
         internal static void ResetForTesting() {
             ResetStatics();
             TelemetryQueue.ResetStatics();
@@ -596,14 +611,17 @@ namespace TestingFloorSdk {
             _client = new CollectorClient(_settings);
             _state = TelemetryState.Ok;
             _initialized = true;
-            if (RecordingTelemetry.Register(TestingFloorRecording.Current, PlaySessionId)) {
+            if (RegisterRecording(TestingFloorRecording.Current)) {
                 var driver = new GameObject("[TestingFloor.RecordingTelemetry]");
                 UnityEngine.Object.DontDestroyOnLoad(driver);
                 driver.AddComponent<RecordingTelemetryDriver>();
             }
         }
 
-        static IBatchSender GetClient() => _client;
+        static IBatchSender GetClient() => s_senderForTesting ?? _client;
+
+        internal static bool RegisterRecording(TestingFloorRecording recording) =>
+            RecordingTelemetry.Register(recording, PlaySessionId, EnqueueRecordingCompletion, () => SendBufferedRecords(shuttingDown: false));
 
         static void ApplySendResult(SendResult result) {
             if (_state == TelemetryState.Disabled) return;
@@ -623,20 +641,25 @@ namespace TestingFloorSdk {
             Enqueue(marker);
         }
 
+        // Queues the state change and object rows that wait for the next poll or check, while the
+        // recording is still open, so they go out with it ahead of its completion marker.
+        static void SendBufferedRecords(bool shuttingDown) {
+            if (!IsCollecting) return;
+            var now = Time.unscaledTimeAsDouble;
+            PollState(now);
+            // A removal carried to a later check, and the later lifetime of an id that it holds
+            // back, each need another check. Stop when the queue refuses one.
+            var passes = _objects.WaitingRemovalCount + 2;
+            var refused = CheckObjects(now);
+            while (!refused && _objects.WaitingCount > 0 && --passes > 0) refused = CheckObjects(now);
+            // A refused record already counts as dropped. When a recording closes mid-session, what
+            // still waits goes out at later checks without the recording; at shutdown it is lost,
+            // and counts toward dropped_events before the completion marker.
+            if (shuttingDown) TelemetryQueue.CountDropped(_objects.WaitingCount, recording: TestingFloorRecording.Current != null);
+        }
+
         internal static void FinishRecordingAndFlush() {
-            // The last state change and object movement go out before the completion marker,
-            // while they still carry the recording.
-            if (IsCollecting) {
-                var now = Time.unscaledTimeAsDouble;
-                PollState(now);
-                // A removal carried to a later check, and the later lifetime of an id that it holds
-                // back, each need another check. Stop when the queue refuses one; whatever still
-                // waits is lost and counts toward dropped_events before the completion marker.
-                var passes = _objects.WaitingRemovalCount + 2;
-                var refused = CheckObjects(now);
-                while (!refused && _objects.WaitingCount > 0 && --passes > 0) refused = CheckObjects(now);
-                TelemetryQueue.CountDropped(_objects.WaitingCount, recording: TestingFloorRecording.Current != null);
-            }
+            SendBufferedRecords(shuttingDown: true);
             RecordingTelemetry.Finish();
             TelemetryQueue.FlushBlocking(TimeSpan.FromSeconds(QuitFlushTimeoutSeconds), _client, _settings);
         }
