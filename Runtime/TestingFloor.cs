@@ -29,6 +29,7 @@ namespace TestingFloorSdk {
         static double _nextStatePollAt;
         static double _nextObjectCheckAt;
         static string _objectsRecordingUuid;
+        static long _lastObjectsTimestampMs;
         static Func<TelemetryEvent, bool> s_captureForTesting;
         static Func<Vector3?> _positionSource;
         static Func<Camera> _cameraSource;
@@ -57,6 +58,7 @@ namespace TestingFloorSdk {
             _nextStatePollAt = 0;
             _nextObjectCheckAt = 0;
             _objectsRecordingUuid = null;
+            _lastObjectsTimestampMs = 0;
             s_captureForTesting = null;
             _positionSource = null;
             _cameraSource = null;
@@ -437,7 +439,8 @@ namespace TestingFloorSdk {
             QueueRecord(RecordKind.State, StateRecordName, properties, keyframe, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
         }
 
-        static void CheckObjects(double now) {
+        // Returns whether the queue refused any of the check's records.
+        static bool CheckObjects(double now) {
             // A Play run that joins a new recording repeats every live object, as state does.
             var recordingUuid = TestingFloorRecording.Current?.RecordingUuid;
             if (!string.Equals(recordingUuid, _objectsRecordingUuid, StringComparison.Ordinal)) {
@@ -445,15 +448,27 @@ namespace TestingFloorSdk {
                 if (recordingUuid != null) _objects.RequestKeyframe();
             }
             var keyframe = _objects.Check(now, s_objectRecords);
-            if (s_objectRecords.Count == 0) return;
-            // Split records of one check share one $time.
-            var timestampMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            if (s_objectRecords.Count == 0) return false;
+            // Split records of one check share one $time. Each check gets a later $time than the
+            // last, so readers that order by time keep consecutive checks apart.
+            var timestampMs = Math.Max(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), _lastObjectsTimestampMs + 1);
+            _lastObjectsTimestampMs = timestampMs;
+            var refused = false;
             for (var i = 0; i < s_objectRecords.Count; i++) {
                 var properties = s_objectRecords[i];
                 foreach (var kvp in _levelValues) properties[kvp.Key] = kvp.Value;
-                QueueRecord(RecordKind.Objects, ObjectsRecordName, properties, keyframe, timestampMs);
+                // A refused record's properties go back to the pool, so read what a retry needs first.
+                var removals = ObjectTracker.RemovalsIn(properties);
+                var sampleIds = properties.TryGetValue("sample.id", out var ids) ? ids as string[] : null;
+                if (QueueRecord(RecordKind.Objects, ObjectsRecordName, properties, keyframe, timestampMs)) continue;
+                refused = true;
+                _objects.Prioritize(sampleIds);
+                // Removals that do not fit the retry backlog are lost like any dropped record.
+                var overflow = _objects.Retry(removals);
+                if (overflow > 0) TelemetryQueue.CountDropped(overflow, recording: TestingFloorRecording.Current != null);
             }
             s_objectRecords.Clear();
+            return refused;
         }
 
         static bool QueueRecord(RecordKind kind, string name, Dictionary<string, object> properties, bool keyframe, long timestampMs) {
@@ -608,7 +623,20 @@ namespace TestingFloorSdk {
             Enqueue(marker);
         }
 
-        static void FinishRecordingAndFlush() {
+        internal static void FinishRecordingAndFlush() {
+            // The last state change and object movement go out before the completion marker,
+            // while they still carry the recording.
+            if (IsCollecting) {
+                var now = Time.unscaledTimeAsDouble;
+                PollState(now);
+                // A removal carried to a later check, and the later lifetime of an id that it holds
+                // back, each need another check. Stop when the queue refuses one; whatever still
+                // waits is lost and counts toward dropped_events before the completion marker.
+                var passes = _objects.WaitingRemovalCount + 2;
+                var refused = CheckObjects(now);
+                while (!refused && _objects.WaitingCount > 0 && --passes > 0) refused = CheckObjects(now);
+                TelemetryQueue.CountDropped(_objects.WaitingCount, recording: TestingFloorRecording.Current != null);
+            }
             RecordingTelemetry.Finish();
             TelemetryQueue.FlushBlocking(TimeSpan.FromSeconds(QuitFlushTimeoutSeconds), _client, _settings);
         }

@@ -60,6 +60,15 @@ namespace TestingFloorSdk.Internal {
             ReturnProperties(ev.Context.Properties);
         }
 
+        // Records lost before they reach the queue, such as object removals beyond the retry backlog.
+        internal static void CountDropped(int count, bool recording) {
+            if (count <= 0) return;
+            lock (QueueLock) {
+                _dropped += count;
+                if (recording) _recordingDropped += count;
+            }
+        }
+
         public static bool Enqueue(TelemetryEvent ev, TestingFloorSettings settings, Func<IBatchSender> clientFactory, Action<SendResult> onResult) {
             lock (QueueLock) {
                 if (ev.EventType != "$tf_telemetry_complete" && _pending.Count + _inFlight >= Math.Max(1, settings != null ? settings.queueMaxEvents : 4096)) {
