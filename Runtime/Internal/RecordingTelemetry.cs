@@ -1,0 +1,50 @@
+using System;
+using System.IO;
+using UnityEngine;
+
+namespace TestingFloorSdk.Internal {
+    internal static class RecordingTelemetry {
+        static TestingFloorRecording _recording;
+        static string _session;
+        static Action<TestingFloorRecording, string> _onComplete;
+
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        internal static void ResetStatics() { _recording = null; _session = null; _onComplete = null; }
+
+        internal static bool Register(TestingFloorRecording recording, string session, Action<TestingFloorRecording, string> onComplete = null) {
+            if (recording == null || string.IsNullOrWhiteSpace(recording.TelemetryDirectory)) return false;
+            try {
+                if (File.Exists(Path.Combine(recording.TelemetryDirectory, "closed.json"))) { recording.Closed = true; return false; }
+                if (!Directory.Exists(recording.TelemetryDirectory)) { recording.Closed = true; return false; }
+                // Register first, then test closure. A recorder closing concurrently
+                // either sees this participant, or this SDK admits no gameplay.
+                File.WriteAllText(Path.Combine(recording.TelemetryDirectory, session + ".session"), "");
+                _recording = recording;
+                _session = session;
+                _onComplete = onComplete ?? TestingFloor.EnqueueRecordingCompletion;
+                Poll();
+                return true;
+            } catch (Exception) { recording.Closed = true; return false; }
+        }
+
+        internal static void Poll() {
+            if (_recording != null && !_recording.Closed &&
+                File.Exists(Path.Combine(_recording.TelemetryDirectory, "closed.json"))) Finish();
+        }
+
+        internal static void Finish() {
+            if (_recording == null || _recording.Closed) return;
+            _recording.Closed = true;
+            _onComplete(_recording, _session);
+        }
+    }
+
+    internal sealed class RecordingTelemetryDriver : MonoBehaviour {
+        float _nextPoll;
+        void Update() {
+            if (Time.realtimeSinceStartup < _nextPoll) return;
+            _nextPoll = Time.realtimeSinceStartup + 0.25f;
+            RecordingTelemetry.Poll();
+        }
+    }
+}
