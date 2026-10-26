@@ -25,11 +25,17 @@ namespace TestingFloorSdk {
                 var forward = t.forward;
                 snapshot.SetVector("camera.forward", forward);
                 snapshot.Set("camera.fov", (double)camera.fieldOfView);
-                snapshot.Set("camera.fov_axis", "vertical");
                 snapshot.Platform = snapshot.Platform.WithScreenSize(camera.pixelWidth, camera.pixelHeight);
-                snapshot.Set("viewport.width", (long)camera.pixelWidth);
-                snapshot.Set("viewport.height", (long)camera.pixelHeight);
             }
+        }
+
+        // Values that stay true until they change are sent as session state.
+        internal static void FillState(ref ContextSnapshot snapshot) {
+            var camera = global::TestingFloorSdk.TestingFloor.GetCamera();
+            if (camera == null) return;
+            snapshot.Set("camera.fov_axis", "vertical");
+            snapshot.Set("viewport.width", (long)camera.pixelWidth);
+            snapshot.Set("viewport.height", (long)camera.pixelHeight);
         }
     }
 }

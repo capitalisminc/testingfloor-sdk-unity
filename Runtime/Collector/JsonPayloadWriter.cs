@@ -12,6 +12,7 @@ namespace TestingFloorSdk.Internal {
         // plus a comma per event. The exact accounting is done per-event but this
         // gives the caller a default to subtract when picking a target body size.
         public const int BodySafetyMargin = 8 << 10;       // 8 KB
+        public const int SchemaVersion = 2;
 
         readonly TelemetryJsonWriter _main = new();
         readonly TelemetryJsonWriter _scratch = new();
@@ -108,7 +109,7 @@ namespace TestingFloorSdk.Internal {
             writer.WriteString("$id", ev.Id);
             writer.WriteString("$name", ev.EventType);
             writer.WriteString("$time", DateTimeOffset.FromUnixTimeMilliseconds(ev.TimestampMs));
-            writer.WriteNumber("$schema", 1);
+            writer.WriteNumber("$schema", SchemaVersion);
 
             if (!string.IsNullOrWhiteSpace(ev.UserId)) {
                 writer.WriteString("$user_id", ev.UserId);
@@ -120,14 +121,20 @@ namespace TestingFloorSdk.Internal {
             var effectivePlaySessionId = !string.IsNullOrWhiteSpace(ev.SessionId) ? ev.SessionId : fallbackSessionId;
             writer.WriteString("$session_id", effectivePlaySessionId);
 
-            WriteTestingFloorContext(writer, ev.Context, ev.Recording);
-            WriteMergedProperties(writer, ev.Context.Properties, ev.EventProperties);
+            WriteTestingFloorContext(writer, ev);
+            if (ev.Kind == RecordKind.Event) {
+                WriteMergedProperties(writer, ev.Context.Properties, ev.EventProperties);
+            }
+            else {
+                WriteRecordProperties(writer, ev.EventProperties);
+            }
 
             writer.WriteEndObject();
         }
 
-        static void WriteTestingFloorContext(TelemetryJsonWriter writer, ContextSnapshot context, TestingFloorRecording recording) {
-            var p = context.Platform;
+        static void WriteTestingFloorContext(TelemetryJsonWriter writer, TelemetryEvent ev) {
+            var p = ev.Context.Platform;
+            var recording = ev.Recording;
             writer.WritePropertyName("$tf");
             writer.WriteStartObject();
             WriteString(writer, "sdk_version", p.SdkVersion);
@@ -147,6 +154,8 @@ namespace TestingFloorSdk.Internal {
                     writer.WriteNumber("playtest_id", recording.PlaytestId.Value);
                 }
             }
+            if (ev.Seq > 0) writer.WriteNumber("seq", ev.Seq);
+            if (ev.Keyframe) writer.WriteBoolean("keyframe", true);
             writer.WriteEndObject();
         }
 
@@ -172,6 +181,65 @@ namespace TestingFloorSdk.Internal {
                     if (!ContextSnapshot.IsPropertyKey(kvp.Key)) continue;
                     ContextSnapshot.WriteObjectValue(writer, kvp.Key, kvp.Value);
                 }
+            }
+        }
+
+        // `$tf_state` sends null for a cleared key, and `$tf_objects` sends
+        // parallel arrays of numbers and mixed scalars. Game events cannot
+        // carry either; their values go through ContextSnapshot.WriteObjectValue.
+        static void WriteRecordProperties(TelemetryJsonWriter writer, Dictionary<string, object> properties) {
+            if (properties == null) return;
+            foreach (var kvp in properties) {
+                if (!ContextSnapshot.IsPropertyKey(kvp.Key)) continue;
+                switch (kvp.Value) {
+                    case null:
+                        writer.WriteNull(kvp.Key);
+                        break;
+                    case double[] numbers:
+                        writer.WritePropertyName(kvp.Key);
+                        writer.WriteStartArray();
+                        for (var i = 0; i < numbers.Length; i++) writer.WriteNumberValue(numbers[i]);
+                        writer.WriteEndArray();
+                        break;
+                    case object[] values:
+                        writer.WritePropertyName(kvp.Key);
+                        writer.WriteStartArray();
+                        for (var i = 0; i < values.Length; i++) WriteScalarValue(writer, kvp.Key, values[i]);
+                        writer.WriteEndArray();
+                        break;
+                    default:
+                        ContextSnapshot.WriteObjectValue(writer, kvp.Key, kvp.Value);
+                        break;
+                }
+            }
+        }
+
+        static void WriteScalarValue(TelemetryJsonWriter writer, string key, object value) {
+            switch (value) {
+                case null:
+                    writer.WriteNullValue();
+                    break;
+                case string s:
+                    writer.WriteStringValue(s);
+                    break;
+                case long l:
+                    writer.WriteNumberValue(l);
+                    break;
+                case int i:
+                    writer.WriteNumberValue(i);
+                    break;
+                case double d:
+                    writer.WriteNumberValue(d);
+                    break;
+                case float f:
+                    writer.WriteNumberValue(f);
+                    break;
+                case bool b:
+                    writer.WriteBooleanValue(b);
+                    break;
+                default:
+                    throw new InvalidOperationException(
+                        $"Unsupported TestingFloor record value in '{key}': {value.GetType()}.");
             }
         }
 

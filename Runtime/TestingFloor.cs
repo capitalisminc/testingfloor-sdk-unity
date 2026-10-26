@@ -10,10 +10,26 @@ using UnityEditor;
 namespace TestingFloorSdk {
     public static class TestingFloor {
         const float QuitFlushTimeoutSeconds = 2f;
+        const double StatePollIntervalSeconds = 1.0;
+        internal const string StateRecordName = "$tf_state";
+        internal const string ObjectsRecordName = "$tf_objects";
+        const string LevelKeyPrefix = "game_level.";
 
         static TestingFloorSettings _settings;
         static CollectorClient _client;
         static ITelemetryContextProvider _contextProvider;
+        static ITelemetryContextProvider _stateProvider;
+        static Dictionary<string, object> _directState = new(StringComparer.Ordinal);
+        static SessionStateTracker _stateTracker = new();
+        static ObjectTracker _objects = new();
+        static Dictionary<string, object> _levelValues = new(StringComparer.Ordinal);
+        static readonly List<Dictionary<string, object>> s_objectRecords = new();
+        static long _seq;
+        static int _droppedSeen;
+        static double _nextStatePollAt;
+        static double _nextObjectCheckAt;
+        static string _objectsRecordingUuid;
+        static Func<TelemetryEvent, bool> s_captureForTesting;
         static Func<Vector3?> _positionSource;
         static Func<Camera> _cameraSource;
         static PlatformContext _platformContext;
@@ -29,6 +45,19 @@ namespace TestingFloorSdk {
             _settings = null;
             _client = null;
             _contextProvider = null;
+            _stateProvider = null;
+            _directState = new Dictionary<string, object>(StringComparer.Ordinal);
+            _stateTracker = new SessionStateTracker();
+            _objects = new ObjectTracker();
+            _levelValues = new Dictionary<string, object>(StringComparer.Ordinal);
+            s_objectRecords.Clear();
+            // Seq counts every record queued in one play session, from 1.
+            _seq = 0;
+            _droppedSeen = 0;
+            _nextStatePollAt = 0;
+            _nextObjectCheckAt = 0;
+            _objectsRecordingUuid = null;
+            s_captureForTesting = null;
             _positionSource = null;
             _cameraSource = null;
             _platformContext = default;
@@ -88,8 +117,71 @@ namespace TestingFloorSdk {
             _initialized = false;
         }
 
+        /// <summary>
+        /// Registers the provider for small values that describe each moment,
+        /// such as level, health and game clock. Its values are added to every
+        /// event. Pass null to clear it.
+        /// </summary>
         public static void RegisterContextProvider(ITelemetryContextProvider provider) {
             _contextProvider = provider;
+        }
+
+        /// <summary>
+        /// Registers the provider for values that stay true until they change,
+        /// such as settings, device, build, inventory and outfit. The SDK reads
+        /// it before each event and once a second, and sends only changed
+        /// values as session state. Pass null to clear it.
+        /// </summary>
+        public static void RegisterStateProvider(ITelemetryContextProvider provider) {
+            _stateProvider = provider;
+        }
+
+        /// <summary>Sets one session state value directly. A null string clears the key.</summary>
+        public static void SetState(string key, string value) => PutState(key, value);
+        public static void SetState(string key, long value) => PutState(key, value);
+        public static void SetState(string key, double value) => PutState(key, value);
+        public static void SetState(string key, bool value) => PutState(key, value);
+
+        /// <summary>Clears a value set with <c>SetState</c>. The next state record sends it as null.</summary>
+        public static void ClearState(string key) {
+            if (key != null) _directState.Remove(key);
+        }
+
+        static void PutState(string key, object value) {
+            if (!ContextSnapshot.IsPropertyKey(key)) return;
+            if (value == null) {
+                _directState.Remove(key);
+                return;
+            }
+            if (value is double d && (double.IsNaN(d) || double.IsInfinity(d))) return;
+            _directState[key] = value;
+        }
+
+        /// <summary>
+        /// Tracks an object's position from its transform. The SDK samples it
+        /// while it moves and removes it with the reason <c>destroyed</c> when
+        /// the GameObject is destroyed. Without an id, the SDK assigns
+        /// <c>kind#n</c>. Supply the id your events use for the object so
+        /// events and its path line up.
+        /// </summary>
+        public static TrackedObject TrackObject(string kind, Transform transform, string id = null) {
+            if (transform == null) return new TrackedObject(null, kind, id);
+            return Register(kind, transform, null, id);
+        }
+
+        /// <summary>
+        /// Tracks an object's position from a function. Return null when the
+        /// object is gone; the SDK then removes it with the reason <c>gone</c>.
+        /// </summary>
+        public static TrackedObject TrackObject(string kind, Func<Vector3?> position, string id = null) {
+            if (position == null) return new TrackedObject(null, kind, id);
+            return Register(kind, null, position, id);
+        }
+
+        static TrackedObject Register(string kind, Transform transform, Func<Vector3?> position, string id) {
+            if (!IsCollecting) return new TrackedObject(null, kind, id);
+            ConfigureObjects();
+            return new TrackedObject(_objects.Register(kind, transform, position, id), kind, id);
         }
 
         public static void SetPositionSource(Func<Vector3?> source) {
@@ -251,9 +343,15 @@ namespace TestingFloorSdk {
             }
         }
 
+        internal static bool IsCollecting {
+            get {
+                EnsureInitialized();
+                return _state == TelemetryState.Ok || _state == TelemetryState.NetworkDown;
+            }
+        }
+
         internal static bool TrackEventInternal(string eventType, Dictionary<string, object> eventProperties) {
-            EnsureInitialized();
-            if (_state != TelemetryState.Ok && _state != TelemetryState.NetworkDown) {
+            if (!IsCollecting) {
                 TelemetryQueue.ReturnProperties(eventProperties);
                 return false;
             }
@@ -263,29 +361,172 @@ namespace TestingFloorSdk {
             }
 
             RecordingTelemetry.Poll();
+            // A state change is queued before the event it applies to.
+            PollState(Time.unscaledTimeAsDouble);
+
+
             var context = BuildContext();
+            RememberLevel(context.Properties, eventProperties);
             var timestampMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-            var userId = !string.IsNullOrWhiteSpace(Identity.ProfileId) ? Identity.ProfileId : null;
 
             var ev = new TelemetryEvent(
                 eventType: eventType,
                 eventProperties: eventProperties,
                 context: context,
                 deviceId: Identity.DeviceId,
-                userId: userId,
+                userId: UserId,
                 timestampMs: timestampMs,
-                sessionId: PlaySessionId
+                sessionId: PlaySessionId,
+                seq: _seq + 1
             );
 
-            return TelemetryQueue.Enqueue(ev, _settings, GetClient, ApplySendResult);
+            return Enqueue(ev);
         }
 
-        static ContextSnapshot BuildContext() {
+        static string UserId => !string.IsNullOrWhiteSpace(Identity.ProfileId) ? Identity.ProfileId : null;
+
+        /// <summary>Called every frame by the session driver, in unscaled time.</summary>
+        internal static void Tick(double now) {
+            if (!IsCollecting) return;
+            TestingFloorTrackedObject.RegisterWaiting();
+
+            if (now >= _nextStatePollAt) {
+                _nextStatePollAt = now + StatePollIntervalSeconds;
+                var dropped = TelemetryQueue.DroppedEventCount;
+                if (dropped != _droppedSeen) {
+                    // Readers recover from a lost record at the next keyframe.
+                    _droppedSeen = dropped;
+                    _stateTracker.RequestKeyframe();
+                    _objects.RequestKeyframe();
+                }
+                PollState(now);
+            }
+
+            if (now >= _nextObjectCheckAt) {
+                ConfigureObjects();
+                _nextObjectCheckAt = now + 1.0 / (_settings != null ? _settings.EffectiveObjectSampleRateHz : TestingFloorSettings.DefaultObjectSampleRateHz);
+                CheckObjects(now);
+            }
+        }
+
+        static void PollState(double now) {
+            var snapshot = ContextSnapshot.Create(default);
+            try {
+                BuiltInContextProvider.FillState(ref snapshot);
+            }
+            catch (Exception ex) {
+                if (_settings != null && _settings.logErrors) {
+                    Debug.LogWarning($"[TestingFloor] Built-in state provider threw: {ex}");
+                }
+            }
+            try {
+                _stateProvider?.FillSnapshot(ref snapshot);
+            }
+            catch (Exception ex) {
+                if (_settings != null && _settings.logErrors) {
+                    Debug.LogWarning($"[TestingFloor] State provider threw: {ex}");
+                }
+            }
+            foreach (var kvp in _directState) {
+                ContextSnapshot.Put(ref snapshot.Properties, kvp.Key, kvp.Value);
+            }
+
+            var recordingUuid = TestingFloorRecording.Current?.RecordingUuid;
+            var properties = _stateTracker.Commit(now, snapshot.Properties, recordingUuid, out var keyframe);
+            if (properties == null) return;
+            QueueRecord(RecordKind.State, StateRecordName, properties, keyframe, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+        }
+
+        static void CheckObjects(double now) {
+            // A Play run that joins a new recording repeats every live object, as state does.
+            var recordingUuid = TestingFloorRecording.Current?.RecordingUuid;
+            if (!string.Equals(recordingUuid, _objectsRecordingUuid, StringComparison.Ordinal)) {
+                _objectsRecordingUuid = recordingUuid;
+                if (recordingUuid != null) _objects.RequestKeyframe();
+            }
+            var keyframe = _objects.Check(now, s_objectRecords);
+            if (s_objectRecords.Count == 0) return;
+            // Split records of one check share one $time.
+            var timestampMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            for (var i = 0; i < s_objectRecords.Count; i++) {
+                var properties = s_objectRecords[i];
+                foreach (var kvp in _levelValues) properties[kvp.Key] = kvp.Value;
+                QueueRecord(RecordKind.Objects, ObjectsRecordName, properties, keyframe, timestampMs);
+            }
+            s_objectRecords.Clear();
+        }
+
+        static bool QueueRecord(RecordKind kind, string name, Dictionary<string, object> properties, bool keyframe, long timestampMs) {
+            var ev = new TelemetryEvent(
+                eventType: name,
+                eventProperties: properties,
+                context: ContextSnapshot.Create(CurrentPlatform()),
+                deviceId: Identity.DeviceId,
+                userId: UserId,
+                timestampMs: timestampMs,
+                sessionId: PlaySessionId,
+                seq: _seq + 1,
+                keyframe: keyframe,
+                kind: kind
+            );
+            return Enqueue(ev);
+        }
+
+        // A record the queue refuses was never queued, so it does not use a seq.
+        static bool Enqueue(TelemetryEvent ev) {
+            var capture = s_captureForTesting;
+            var queued = capture != null ? capture(ev) : TelemetryQueue.Enqueue(ev, _settings, GetClient, ApplySendResult);
+            if (queued) _seq = ev.Seq;
+            return queued;
+        }
+
+        // `$tf_objects` records copy the level of the most recent event.
+        static void RememberLevel(Dictionary<string, object> contextProperties, Dictionary<string, object> eventProperties) {
+            _levelValues.Clear();
+            CopyLevelValues(contextProperties);
+            CopyLevelValues(eventProperties);
+        }
+
+        static void CopyLevelValues(Dictionary<string, object> properties) {
+            if (properties == null) return;
+            foreach (var kvp in properties) {
+                if (kvp.Key.StartsWith(LevelKeyPrefix, StringComparison.Ordinal)) _levelValues[kvp.Key] = kvp.Value;
+            }
+        }
+
+        static void ConfigureObjects() {
+            _objects.MaxLiveObjects = _settings != null ? _settings.EffectiveMaxTrackedObjects : TestingFloorSettings.DefaultMaxTrackedObjects;
+            _objects.LogErrors = _settings != null && _settings.logErrors;
+        }
+
+        static PlatformContext CurrentPlatform() {
             if (!_platformContextCaptured) {
                 _platformContext = PlatformContext.Capture();
                 _platformContextCaptured = true;
             }
-            var snapshot = ContextSnapshot.Create(_platformContext.WithScreenSize(Screen.width, Screen.height));
+            return _platformContext.WithScreenSize(Screen.width, Screen.height);
+        }
+
+        /// <summary>
+        /// Test seam: hand each record to <paramref name="capture"/> instead of
+        /// the delivery queue. Automated tests never send live telemetry.
+        /// </summary>
+        internal static void CaptureRecordsForTesting(Func<TelemetryEvent, bool> capture, TestingFloorSettings settings) {
+            ResetStatics();
+            TelemetryQueue.ResetStatics();
+            _settings = settings;
+            _state = TelemetryState.Ok;
+            _initialized = true;
+            s_captureForTesting = capture;
+        }
+
+        internal static void ResetForTesting() {
+            ResetStatics();
+            TelemetryQueue.ResetStatics();
+        }
+
+        static ContextSnapshot BuildContext() {
+            var snapshot = ContextSnapshot.Create(CurrentPlatform());
             try {
                 BuiltInContextProvider.Fill(ref snapshot);
             }
@@ -363,8 +604,8 @@ namespace TestingFloorSdk {
         internal static void EnqueueRecordingCompletion(TestingFloorRecording recording, string session) {
             var marker = new TelemetryEvent("$tf_telemetry_complete", new Dictionary<string, object>(),
                 ContextSnapshot.Create(_platformContext), Identity.DeviceId, Identity.ProfileId,
-                DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), session, recording);
-            TelemetryQueue.Enqueue(marker, _settings, GetClient, ApplySendResult);
+                DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), session, recording, seq: _seq + 1);
+            Enqueue(marker);
         }
 
         static void FinishRecordingAndFlush() {

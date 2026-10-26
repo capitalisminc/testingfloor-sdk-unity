@@ -27,11 +27,14 @@ namespace TestingFloorSdk.Editor {
         SerializedProperty _movementMinStepFovDegrees;
         SerializedProperty _movementMinPingCameraDistance;
         SerializedProperty _movementMinStepCameraDistance;
+        SerializedProperty _objectSampleRateHz;
+        SerializedProperty _maxTrackedObjects;
         SerializedProperty _batchMaxEvents;
         SerializedProperty _batchMaxFlushIntervalSeconds;
         bool _showAdvancedQrTiming;
         bool _showAdvancedMovementTuning;
         bool _showAdvancedBatching;
+        bool _showAdvancedObjectTracking;
 
         void OnEnable() {
             _enabled = serializedObject.FindProperty("enabled");
@@ -57,6 +60,8 @@ namespace TestingFloorSdk.Editor {
             _movementMinStepFovDegrees = serializedObject.FindProperty("movementMinStepFovDegrees");
             _movementMinPingCameraDistance = serializedObject.FindProperty("movementMinPingCameraDistance");
             _movementMinStepCameraDistance = serializedObject.FindProperty("movementMinStepCameraDistance");
+            _objectSampleRateHz = serializedObject.FindProperty("objectSampleRateHz");
+            _maxTrackedObjects = serializedObject.FindProperty("maxTrackedObjects");
             _batchMaxEvents = serializedObject.FindProperty("batchMaxEvents");
             _batchMaxFlushIntervalSeconds = serializedObject.FindProperty("batchMaxFlushIntervalSeconds");
         }
@@ -183,6 +188,24 @@ namespace TestingFloorSdk.Editor {
                         new GUIContent("Min Step Camera Distance", "Per-frame camera world-position movement smaller than this is treated as jitter and ignored.")
                     );
                 }
+            }
+
+            EditorGUILayout.Space();
+            EditorGUILayout.LabelField("Tracked Objects", EditorStyles.boldLabel);
+            _showAdvancedObjectTracking = EditorGUILayout.Foldout(_showAdvancedObjectTracking, "Advanced Tuning", true);
+            if (_showAdvancedObjectTracking) {
+                EditorGUILayout.HelpBox(
+                    "Objects registered with TestingFloor.TrackObject or the Tracked Object component are checked a few times a second and sent only when they move at least 0.25 m.",
+                    MessageType.Info
+                );
+                EditorGUILayout.PropertyField(
+                    _objectSampleRateHz,
+                    new GUIContent("Checks Per Second", "How often live objects are checked, from 1 to 10. Defaults to 4.")
+                );
+                EditorGUILayout.PropertyField(
+                    _maxTrackedObjects,
+                    new GUIContent("Max Live Objects", "Further registrations are ignored, with one warning. Defaults to 256.")
+                );
             }
 
             serializedObject.ApplyModifiedProperties();

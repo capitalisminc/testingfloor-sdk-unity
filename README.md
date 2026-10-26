@@ -44,23 +44,88 @@ reserved `$` keys, and nonfinite numbers are omitted. Convert enums or custom
 values explicitly; nested objects are unsupported. `SetVector(prefix, vector)`
 adds `.x`, `.y`, and `.z` fields.
 
-Register shared state once; keep the provider inexpensive. Event properties
+A context provider adds small values that describe each moment, such as level,
+health and game clock, to every event. Keep it inexpensive. Event properties
 win when they use the same key as context.
 
 ```csharp
-public sealed class GameContext : ITelemetryContextProvider {
+public sealed class MomentContext : ITelemetryContextProvider {
     public void FillSnapshot(ref ContextSnapshot snapshot) {
         snapshot.Set("game_level.id", "tutorial");
-        snapshot.Set("difficulty", "normal");
+        snapshot.Set("player.health", 80);
     }
 }
 
 // During your game's initialization:
-TestingFloor.RegisterContextProvider(new GameContext());
+TestingFloor.RegisterContextProvider(new MomentContext());
 ```
 
-Use SDK APIs and context providers on Unity's main thread. Clear the provider
-with `RegisterContextProvider(null)` when its owner is torn down.
+Use SDK APIs and providers on Unity's main thread. Clear a provider with
+`RegisterContextProvider(null)` when its owner is torn down.
+
+## Session state
+
+Values that stay true until they change, such as settings, device, build,
+inventory and outfit, belong in session state. The SDK sends them once and then
+only when they change, so events stay small. A state provider uses the same
+interface as a context provider:
+
+```csharp
+public sealed class SettingsState : ITelemetryContextProvider {
+    public void FillSnapshot(ref ContextSnapshot snapshot) {
+        snapshot.Set("pref.quality", QualitySettings.names[QualitySettings.GetQualityLevel()]);
+        snapshot.Set("inventory.items", inventory.ItemIds);
+    }
+}
+
+TestingFloor.RegisterStateProvider(new SettingsState());
+TestingFloor.SetState("difficulty", "hard");   // or set one value directly
+TestingFloor.ClearState("difficulty");
+```
+
+The SDK reads state before each event and once a second, also while gameplay is
+paused. When a value changed, it queues a `$tf_state` record with only the
+changed keys before the event. A removed key is sent as `null`. A keyframe
+repeats every value when the play session starts, when a recording starts,
+every 5 minutes and after any record is dropped. Testing Floor applies the
+state at each moment to the events, so you can filter by these values as
+before. The SDK also sends `viewport.width`, `viewport.height` and
+`camera.fov_axis` as state.
+
+Keep values that row-level analytics filter by, such as `game_level.id` and the
+game clock, in the context provider. A game without a state provider keeps all
+of its context on every event.
+
+## Tracked objects
+
+Track NPCs, props, vehicles, pickups and projectiles to draw their paths on the
+recording map. Add **Testing Floor/Tracked Object** to a prefab and set its
+kind, or register objects from code:
+
+```csharp
+var guard = TestingFloor.TrackObject("guard", transform, "captain_zed");
+guard.SetState("behavior", "searching");
+guard.Remove("knocked_out");
+
+// Or read the position yourself; return null when the object is gone.
+TestingFloor.TrackObject("rocket", () => rocket != null ? rocket.position : (Vector3?)null);
+```
+
+Without an id the SDK assigns `kind#n`. Give the id your events already use for
+the object, so events and its path line up. The SDK checks objects 4 times a
+second in unscaled time and sends an object only after it moves at least
+0.25 m. Removing an object sends its final position and the reason. The SDK
+removes an object itself with `destroyed` when its GameObject is destroyed,
+`gone` when the position function returns null, and `disabled` when the
+component is disabled. Object state values are strings, integers, doubles or
+booleans; a value named `label` becomes the display name.
+
+Samples are batched into `$tf_objects` records that copy the `game_level.*`
+values of the most recent event. At most 256 objects are live; further
+registrations are ignored with one warning. While collection is disabled,
+`TrackObject` returns a handle that does nothing, and a component registers
+once collection starts. `objectSampleRateHz` (1–10) and `maxTrackedObjects`
+are in the settings asset.
 
 ## Player ID and Runs
 
@@ -91,7 +156,8 @@ TestingFloor.SetMovementTrackingEnabled(true);
 ```
 
 Every event includes available player/camera positions, camera rotation,
-forward direction, vertical FOV, and viewport size. Positions use native meters.
+forward direction, and vertical FOV; viewport size is sent as session state.
+Positions use native meters.
 A function returning `Vector3?` can replace the player transform; return `null`
 when unavailable. Use `SetCameraSource(Func<Camera>)` for a custom camera.
 
@@ -144,7 +210,9 @@ selects black-on-white rendering. Reset runtime overrides with
 ## Delivery, diagnostics, and shutdown
 
 Defaults are 50 events per batch, a 0.25-second flush window, and 4,096 pending
-events including requests in flight. Queue overflow drops the newest event.
+events including requests in flight. State and object records count as events
+here. Each record carries `$tf.seq`, which counts every record of a play
+session from 1, so Testing Floor can tell when records are missing. Queue overflow drops the newest event.
 Network errors, HTTP 408/429, and server errors retry in order with stable event
 IDs and exponential backoff. HTTP 401/403 reject the play session; other invalid
 client requests are dropped. Oversized events are dropped before sending.
@@ -169,6 +237,6 @@ thresholds. Most games need only the write key and activity sources.
 See [SDK_CONTRACT.md](SDK_CONTRACT.md) for behavior shared with the
 [Unreal SDK](https://github.com/capitalisminc/testingfloor-sdk-unreal), and
 [CONTRIBUTING.md](CONTRIBUTING.md) for package tests and local development.
-[CHANGELOG.md](CHANGELOG.md) documents breaking changes in 0.3.0.
+[CHANGELOG.md](CHANGELOG.md) documents the changes in each release.
 
 MIT. See [LICENSE.md](LICENSE.md) and [ThirdPartyNotices.md](ThirdPartyNotices.md).
