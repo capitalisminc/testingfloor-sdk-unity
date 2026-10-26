@@ -33,7 +33,7 @@ namespace TestingFloorSdk {
         static TestingFloorRecording _current;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
-        static void ResetStatics() {
+        internal static void ResetStatics() {
             // Re-resolve on every Play start (and editor domain reload). The
             // recorder leaves the sidecar payload in place for the lifetime of
             // the recording, so re-reading is what lets a single recording
@@ -49,6 +49,11 @@ namespace TestingFloorSdk {
                 _current = ResolveFromArgs() ?? ResolveFromSidecar();
                 return _current;
             }
+        }
+
+        internal static void UseForTesting(TestingFloorRecording recording) {
+            _resolved = true;
+            _current = recording;
         }
 
         internal static bool HasRecorderSession => Current != null;

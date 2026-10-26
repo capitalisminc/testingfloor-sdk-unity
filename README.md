@@ -237,6 +237,6 @@ thresholds. Most games need only the write key and activity sources.
 See [SDK_CONTRACT.md](SDK_CONTRACT.md) for behavior shared with the
 [Unreal SDK](https://github.com/capitalisminc/testingfloor-sdk-unreal), and
 [CONTRIBUTING.md](CONTRIBUTING.md) for package tests and local development.
-[CHANGELOG.md](CHANGELOG.md) documents the changes in 0.3.0 and 0.2.0.
+[CHANGELOG.md](CHANGELOG.md) documents the changes in each release.
 
 MIT. See [LICENSE.md](LICENSE.md) and [ThirdPartyNotices.md](ThirdPartyNotices.md).

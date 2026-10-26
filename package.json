@@ -1,6 +1,6 @@
 {
   "name": "com.testingfloor.unity-sdk",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "displayName": "Testing Floor SDK",
   "description": "Testing Floor telemetry and session-sync primitives for Unity. Drop in, set a write key, and Track().Send().",
   "unity": "6000.0",

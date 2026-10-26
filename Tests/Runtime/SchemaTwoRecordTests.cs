@@ -44,6 +44,7 @@ namespace TestingFloorSdk.Tests {
 
         [TearDown]
         public void TearDown() {
+            TestingFloorRecording.ResetStatics();
             global::TestingFloorSdk.TestingFloor.ResetForTesting();
             global::TestingFloorSdk.TestingFloor.SetForceDisabled(false);
             UnityEngine.Object.DestroyImmediate(_settings);
@@ -208,6 +209,58 @@ namespace TestingFloorSdk.Tests {
                 TelemetryQueue.ResetStatics();
                 UnityEngine.Object.DestroyImmediate(queueSettings);
             }
+
+            CollectionAssert.AreEqual(new[] { "$tf_state", "$tf_objects" }, Names());
+            Assert.IsTrue(_records[0].Keyframe);
+            Assert.AreEqual("hard", _records[0].EventProperties["difficulty"]);
+            Assert.IsTrue(_records[1].Keyframe);
+            CollectionAssert.AreEqual(new[] { "crate#1" }, (string[])_records[1].EventProperties["sample.id"]);
+        }
+
+        [Test]
+        public void CompletionMarkerTakesTheNextSeq() {
+            var recording = new TestingFloorRecording("example-recording", null, true);
+            global::TestingFloorSdk.TestingFloor.Track("level_started").Send();
+            global::TestingFloorSdk.TestingFloor.EnqueueRecordingCompletion(recording, global::TestingFloorSdk.TestingFloor.PlaySessionId);
+            global::TestingFloorSdk.TestingFloor.Track("door_opened").Send();
+
+            CollectionAssert.AreEqual(new[] { "level_started", "$tf_telemetry_complete", "door_opened" }, Names());
+            CollectionAssert.AreEqual(new long[] { 1, 2, 3 }, Seqs());
+            StringAssert.Contains("\"seq\":2", Json(_records[1]));
+        }
+
+        [Test]
+        public void ClosedRecordingIsDroppedFromStateAndObjectRecords() {
+            var recording = new TestingFloorRecording("example-recording", null, true);
+            TestingFloorRecording.UseForTesting(recording);
+            var crate = new Vector3(1, 0, 1);
+            global::TestingFloorSdk.TestingFloor.SetState("difficulty", "normal");
+            global::TestingFloorSdk.TestingFloor.TrackObject("crate", () => crate);
+            global::TestingFloorSdk.TestingFloor.Tick(0);
+            StringAssert.Contains("\"recording_uuid\":\"example-recording\"", Json(_records.Single(r => r.EventType == "$tf_state")));
+            StringAssert.Contains("\"recording_uuid\":\"example-recording\"", Json(_records.Single(r => r.EventType == "$tf_objects")));
+            _records.Clear();
+
+            recording.Closed = true;
+            global::TestingFloorSdk.TestingFloor.SetState("difficulty", "hard");
+            crate = new Vector3(5, 0, 5);
+            global::TestingFloorSdk.TestingFloor.Tick(1);
+
+            CollectionAssert.AreEqual(new[] { "$tf_state", "$tf_objects" }, Names());
+            Assert.IsFalse(_records[0].Keyframe, "Leaving a recording is not a keyframe");
+            foreach (var record in _records) StringAssert.DoesNotContain("recording_uuid", Json(record));
+        }
+
+        [Test]
+        public void NewRecordingSendsAStateAndObjectKeyframe() {
+            global::TestingFloorSdk.TestingFloor.SetState("difficulty", "hard");
+            global::TestingFloorSdk.TestingFloor.TrackObject("crate", () => Vector3.one);
+            global::TestingFloorSdk.TestingFloor.Tick(0);
+            global::TestingFloorSdk.TestingFloor.Tick(1);
+            _records.Clear();
+
+            TestingFloorRecording.UseForTesting(new TestingFloorRecording("example-recording", null, true));
+            global::TestingFloorSdk.TestingFloor.Tick(2);
 
             CollectionAssert.AreEqual(new[] { "$tf_state", "$tf_objects" }, Names());
             Assert.IsTrue(_records[0].Keyframe);

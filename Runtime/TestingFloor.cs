@@ -28,6 +28,7 @@ namespace TestingFloorSdk {
         static int _droppedSeen;
         static double _nextStatePollAt;
         static double _nextObjectCheckAt;
+        static string _objectsRecordingUuid;
         static Func<TelemetryEvent, bool> s_captureForTesting;
         static Func<Vector3?> _positionSource;
         static Func<Camera> _cameraSource;
@@ -55,6 +56,7 @@ namespace TestingFloorSdk {
             _droppedSeen = 0;
             _nextStatePollAt = 0;
             _nextObjectCheckAt = 0;
+            _objectsRecordingUuid = null;
             s_captureForTesting = null;
             _positionSource = null;
             _cameraSource = null;
@@ -436,6 +438,12 @@ namespace TestingFloorSdk {
         }
 
         static void CheckObjects(double now) {
+            // A Play run that joins a new recording repeats every live object, as state does.
+            var recordingUuid = TestingFloorRecording.Current?.RecordingUuid;
+            if (!string.Equals(recordingUuid, _objectsRecordingUuid, StringComparison.Ordinal)) {
+                _objectsRecordingUuid = recordingUuid;
+                if (recordingUuid != null) _objects.RequestKeyframe();
+            }
             var keyframe = _objects.Check(now, s_objectRecords);
             if (s_objectRecords.Count == 0) return;
             // Split records of one check share one $time.

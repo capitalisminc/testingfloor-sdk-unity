@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.3.0
+## 0.4.0
 
 Telemetry schema 2. Values that stay true for a while are sent once, when they
 change, instead of on every event, and objects other than the player get paths
@@ -24,8 +24,10 @@ on the map. Testing Floor reads schema 1 and schema 2 data the same way.
   GameObject while it is enabled and removes it with the reason `disabled`.
 - `objectSampleRateHz` (1–10, default 4) and `maxTrackedObjects` (default 256)
   settings.
-- Register each Play run with its recorder and close recording telemetry with an acknowledged flush marker.
-- Keep completion markers behind earlier batch acknowledgments, report dropped events, and detach later gameplay from stopped recordings.
+- With recording delivery completion: `$tf_telemetry_complete` takes the next
+  seq, dropped state and object records count toward `dropped_events`, state
+  and object records stop carrying a closed recording's UUID, and a Play run
+  that registers with a new recording sends a keyframe of state and objects.
 
 ### Changed
 
@@ -38,6 +40,11 @@ on the map. Testing Floor reads schema 1 and schema 2 data the same way.
   such as level, health and game clock. Move values that rarely change to a
   state provider to make events smaller. A game that registers no state
   provider keeps all of its context on every event.
+
+## 0.3.0
+
+- Register each Play run with its recorder and close recording telemetry with an acknowledged flush marker.
+- Keep completion markers behind earlier batch acknowledgments, report dropped events, and detach later gameplay from stopped recordings.
 
 ## 0.2.0 — Unreleased
 
