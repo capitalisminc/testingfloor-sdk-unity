@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.4.1
+
+### Fixed
+
+- A tracked object whose position has a NaN or infinite axis is skipped for
+  that check instead of writing invalid JSON that broke the whole request.
+- When an object and a same-id replacement were both removed before the next
+  check, the replacement's samples joined the old path. Each lifetime of an id
+  now ends in its own record.
+
 ## 0.4.0
 
 Telemetry schema 2. Values that stay true for a while are sent once, when they
