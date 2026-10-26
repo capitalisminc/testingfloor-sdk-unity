@@ -19,6 +19,7 @@ namespace TestingFloorSdk.Internal {
         static List<TelemetryEvent> _activeBatch;
         static bool _requestInFlight;
         static int _dropped;
+        static int _recordingDropped;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         internal static void ResetStatics() {
@@ -34,6 +35,7 @@ namespace TestingFloorSdk.Internal {
                 _activeBatch = null;
                 _requestInFlight = false;
                 _dropped = 0;
+                _recordingDropped = 0;
             }
         }
 
@@ -63,6 +65,7 @@ namespace TestingFloorSdk.Internal {
                 if (ev.EventType != "$tf_telemetry_complete" && _pending.Count + _inFlight >= Math.Max(1, settings != null ? settings.queueMaxEvents : 4096)) {
                     Release(ev);
                     _dropped++;
+                    if (CollectorClient.IsRecordingGameplay(ev)) _recordingDropped++;
                     return false;
                 }
                 _pending.Enqueue(ev);
@@ -84,6 +87,7 @@ namespace TestingFloorSdk.Internal {
         static void ApplyOutcome(List<TelemetryEvent> batch, BatchSendOutcome outcome) {
             lock (QueueLock) {
                 var consumed = Math.Clamp(outcome.Consumed, 0, batch.Count);
+                _recordingDropped += Math.Clamp(outcome.RecordingDropped, 0, consumed);
                 for (var i = 0; i < consumed; i++) Release(batch[i]);
                 _dropped += Math.Clamp(outcome.Dropped, 0, consumed);
                 var retained = new Queue<TelemetryEvent>();
@@ -96,7 +100,11 @@ namespace TestingFloorSdk.Internal {
                 _flushRequested = _pending.Count > 0;
                 if (outcome.Result == SendResult.Rejected || outcome.Result == SendResult.NotConfigured) {
                     _dropped += _pending.Count;
-                    while (_pending.Count > 0) Release(_pending.Dequeue());
+                    while (_pending.Count > 0) {
+                        var ev = _pending.Dequeue();
+                        if (CollectorClient.IsRecordingGameplay(ev)) _recordingDropped++;
+                        Release(ev);
+                    }
                 }
             }
         }
@@ -119,7 +127,7 @@ namespace TestingFloorSdk.Internal {
                 while (batch.Count < maximum && _pending.Count > 0) {
                     if (batch.Count > 0 && _pending.Peek().EventType == "$tf_telemetry_complete") break;
                     var next = _pending.Dequeue();
-                    if (next.EventType == "$tf_telemetry_complete") next.EventProperties["dropped_events"] = _dropped;
+                    if (next.EventType == "$tf_telemetry_complete") next.EventProperties["dropped_events"] = _recordingDropped;
                     batch.Add(next);
                     if (next.EventType == "$tf_telemetry_complete") break;
                 }
@@ -153,7 +161,7 @@ namespace TestingFloorSdk.Internal {
                             while (batch.Count < maximum && _pending.Count > 0) {
                                 if (batch.Count > 0 && _pending.Peek().EventType == "$tf_telemetry_complete") break;
                                 var next = _pending.Dequeue();
-                                if (next.EventType == "$tf_telemetry_complete") next.EventProperties["dropped_events"] = _dropped;
+                                if (next.EventType == "$tf_telemetry_complete") next.EventProperties["dropped_events"] = _recordingDropped;
                                 batch.Add(next);
                                 if (next.EventType == "$tf_telemetry_complete") break;
                             }
@@ -169,7 +177,7 @@ namespace TestingFloorSdk.Internal {
                     _requestInFlight = client != null;
                     try {
                         outcome = client == null
-                            ? new BatchSendOutcome(SendResult.NotConfigured, batch.Count, batch.Count)
+                            ? new BatchSendOutcome(SendResult.NotConfigured, batch.Count, batch.Count, CollectorClient.CountRecording(batch, batch.Count))
                             : await client.TrackBatchAsync(batch);
                     }
                     catch (Exception) {

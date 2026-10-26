@@ -177,6 +177,31 @@ namespace TestingFloorSdk.Tests {
             }
         }
 
+        [TestCase(true)]
+        [TestCase(false)]
+        public async Task CompletionLossCountOnlyIncludesItsRecording(bool lostDuringRecording) {
+            _settings.queueMaxEvents = 1;
+            var recording = new TestingFloorRecording("example-recording", null, true);
+            var first = new TaskCompletionSource<BatchSendOutcome>();
+            var calls = 0;
+            var markerLoss = -1;
+            var sender = new BarrierSender { Respond = events => {
+                calls++;
+                if (calls == 1) return first.Task;
+                markerLoss = Convert.ToInt32(events[0].EventProperties["dropped_events"]);
+                return Task.FromResult(new BatchSendOutcome(SendResult.Success, events.Count));
+            }};
+            var gameplay = new TelemetryEvent("gameplay", null, ContextSnapshot.Create(default), null, null, 0, "example-play", recording);
+            TelemetryQueue.Enqueue(gameplay, _settings, () => sender, null);
+            if (lostDuringRecording) Assert.IsFalse(TelemetryQueue.Enqueue(gameplay, _settings, () => sender, null));
+            var marker = new TelemetryEvent("$tf_telemetry_complete", new Dictionary<string, object>(), ContextSnapshot.Create(default), null, null, 0, "example-play", recording);
+            TelemetryQueue.Enqueue(marker, _settings, () => sender, null);
+            if (!lostDuringRecording) Assert.IsFalse(TelemetryQueue.Enqueue(Event("after_recording"), _settings, () => sender, null));
+            first.SetResult(new BatchSendOutcome(SendResult.Success, 1));
+            await Until(() => !TelemetryQueue.HasPending());
+            Assert.AreEqual(lostDuringRecording ? 1 : 0, markerLoss);
+        }
+
         sealed class BarrierSender : IBatchSender {
             internal Func<IReadOnlyList<TelemetryEvent>, Task<BatchSendOutcome>> Respond;
             public async ValueTask<BatchSendOutcome> TrackBatchAsync(IReadOnlyList<TelemetryEvent> events) => await Respond(events);

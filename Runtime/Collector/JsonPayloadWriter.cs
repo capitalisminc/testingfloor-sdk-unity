@@ -34,7 +34,8 @@ namespace TestingFloorSdk.Internal {
             int maxEventBytes,
             TestingFloorSettings settingsForLogging,
             out int consumed,
-            out int written) {
+            out int written,
+            Action<TelemetryEvent> onDropped = null) {
             if (events == null || events.Count == 0) {
                 consumed = 0;
                 written = 0;
@@ -68,6 +69,7 @@ namespace TestingFloorSdk.Internal {
                         Debug.LogWarning(
                             $"[TestingFloor] Dropping event '{ev.EventType}': failed to serialize: {ex.Message}");
                     }
+                    onDropped?.Invoke(ev);
                     consumed++;
                     continue;
                 }
@@ -78,6 +80,7 @@ namespace TestingFloorSdk.Internal {
                         Debug.LogWarning(
                             $"[TestingFloor] Dropping event '{ev.EventType}': serialized size {probe.Length} exceeds per-event cap {maxEventBytes}.");
                     }
+                    onDropped?.Invoke(ev);
                     consumed++;
                     continue;
                 }
