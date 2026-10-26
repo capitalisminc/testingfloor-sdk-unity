@@ -102,7 +102,12 @@ namespace TestingFloorSdk.Internal {
 
         public void WriteBoolean(string key, bool value) {
             WritePropertyName(key);
-            WriteRawValue(value ? "true" : "false");
+            WriteBooleanValue(value);
+        }
+
+        public void WriteNull(string key) {
+            WritePropertyName(key);
+            WriteNullValue();
         }
 
         public void WriteStringValue(string value) {
@@ -112,6 +117,22 @@ namespace TestingFloorSdk.Internal {
 
         public void WriteNumberValue(int value) {
             WriteInt64(value);
+        }
+
+        public void WriteNumberValue(long value) {
+            WriteInt64(value);
+        }
+
+        public void WriteNumberValue(double value) {
+            WriteDouble(value);
+        }
+
+        public void WriteBooleanValue(bool value) {
+            WriteRawValue(value ? "true" : "false");
+        }
+
+        public void WriteNullValue() {
+            WriteRawValue("null");
         }
 
         /// <summary>

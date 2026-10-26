@@ -46,7 +46,7 @@ namespace TestingFloorSdk.Tests {
             StringAssert.Contains("\"$device_id\":\"device123\"", json);
             StringAssert.Contains("\"$user_id\":\"user456\"", json);
             StringAssert.Contains("\"$session_id\":\"session-abc\"", json);
-            StringAssert.Contains("\"$schema\":1", json);
+            StringAssert.Contains("\"$schema\":2", json);
             StringAssert.Contains("\"weapon.id\":\"plasma\"", json);
             StringAssert.Contains("\"damage\":42", json);
             StringAssert.Contains("\"$tf\":{", json);
@@ -268,6 +268,58 @@ namespace TestingFloorSdk.Tests {
             StringAssert.Contains("\"$id\":\"" + ev.Id + "\"", first);
             StringAssert.Contains("\"$id\":\"" + ev.Id + "\"", retry);
             StringAssert.Contains("1970-01-01T00:00:01.234", retry);
+        }
+
+        [Test]
+        public void RecordEnvelopeCarriesSeqAndKeyframeInTheTfBlock() {
+            var props = new Dictionary<string, object> { ["pref.quality"] = "high" };
+            var ev = new TelemetryEvent("$tf_state", props, ContextSnapshot.Create(default), "d", null, 0, "play", seq: 7, keyframe: true, kind: RecordKind.State);
+            var json = BuildSingle(new JsonPayloadWriter(), ev, "wk", "unused");
+            StringAssert.Contains("\"$tf\":{", json);
+            StringAssert.Contains("\"seq\":7", json);
+            StringAssert.Contains("\"keyframe\":true", json);
+
+            var plain = new TelemetryEvent("door_opened", null, ContextSnapshot.Create(default), "d", null, 0, "play", seq: 8);
+            var plainJson = BuildSingle(new JsonPayloadWriter(), plain, "wk", "unused");
+            StringAssert.Contains("\"seq\":8", plainJson);
+            StringAssert.DoesNotContain("keyframe", plainJson);
+        }
+
+        [Test]
+        public void StateRecordWritesNullForAClearedKey() {
+            var props = new Dictionary<string, object> { ["difficulty"] = null, ["pref.vsync"] = false };
+            var ev = new TelemetryEvent("$tf_state", props, ContextSnapshot.Create(default), "d", null, 0, "play", seq: 2, kind: RecordKind.State);
+            var json = BuildSingle(new JsonPayloadWriter(), ev, "wk", "unused");
+            StringAssert.Contains("\"difficulty\":null", json);
+            StringAssert.Contains("\"pref.vsync\":false", json);
+        }
+
+        [Test]
+        public void ObjectsRecordWritesNumberAndScalarArrays() {
+            var props = new Dictionary<string, object> {
+                ["sample.id"] = new[] { "guard#3", "crate#12" },
+                ["sample.x"] = new[] { 12.41, 4.5 },
+                ["state.value"] = new object[] { "searching", 3L, 0.5, true },
+            };
+            var ev = new TelemetryEvent("$tf_objects", props, ContextSnapshot.Create(default), "d", null, 0, "play", seq: 3, kind: RecordKind.Objects);
+            var json = BuildSingle(new JsonPayloadWriter(), ev, "wk", "unused");
+            StringAssert.Contains("\"sample.id\":[\"guard#3\",\"crate#12\"]", json);
+            StringAssert.Contains("\"sample.x\":[12.41,4.5]", json);
+            StringAssert.Contains("\"state.value\":[\"searching\",3,0.5,true]", json);
+        }
+
+        [Test]
+        public void GameEventsStillOmitNullsAndRejectFloatArrays() {
+            var withNull = new TelemetryEvent("a", new Dictionary<string, object> { ["missing"] = null, ["k"] = "v" }, ContextSnapshot.Create(default), "d", null, 0, "play");
+            var withFloats = new TelemetryEvent("b", new Dictionary<string, object> { ["values"] = new[] { 1.5 } }, ContextSnapshot.Create(default), "d", null, 0, "play");
+
+            var bytes = new JsonPayloadWriter().BuildBatch(new[] { withNull, withFloats }, "wk", "unused", BodyCap, EventCap, null, out var consumed, out var written);
+            var json = Encoding.UTF8.GetString(bytes);
+
+            Assert.AreEqual(2, consumed);
+            Assert.AreEqual(1, written, "A float array is not a game-event property type");
+            StringAssert.DoesNotContain("missing", json);
+            StringAssert.DoesNotContain("\"$name\":\"b\"", json);
         }
 
         [Test]

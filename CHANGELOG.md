@@ -1,5 +1,42 @@
 # Changelog
 
+## 0.3.0 — Unreleased
+
+Telemetry schema 2. Values that stay true for a while are sent once, when they
+change, instead of on every event, and objects other than the player get paths
+on the map. Testing Floor reads schema 1 and schema 2 data the same way.
+
+### Added
+
+- `TestingFloor.RegisterStateProvider(...)`, `SetState(key, value)` and
+  `ClearState(key)` for session state: settings, device, build, inventory,
+  outfit and similar values. The SDK reads state before each event and once a
+  second and queues a `$tf_state` record with only the changed keys before the
+  event. A cleared key is sent as `null`. A keyframe repeats every value when
+  the play session starts, when a recording starts, every 5 minutes and after
+  any record is dropped.
+- `TestingFloor.TrackObject(kind, transform, id)` and
+  `TrackObject(kind, Func<Vector3?>, id)` return a `TrackedObject` handle with
+  `SetState(key, value)` and `Remove(reason)`. Objects are checked 4 times a
+  second and sent in batched `$tf_objects` records when they move at least
+  0.25 m. Ids default to `kind#n`.
+- The **Tracked Object** component (`TestingFloorTrackedObject`) tracks a
+  GameObject while it is enabled and removes it with the reason `disabled`.
+- `objectSampleRateHz` (1–10, default 4) and `maxTrackedObjects` (default 256)
+  settings.
+
+### Changed
+
+- Every record is sent with `$schema: 2` and `$tf.seq`, which counts every
+  record of a play session from 1. Keyframes set `$tf.keyframe: true`.
+- `viewport.width`, `viewport.height` and `camera.fov_axis` move from every
+  event to session state. Camera pose, `camera.fov` and the player position
+  stay on events.
+- `RegisterContextProvider` is now for small values that describe each moment,
+  such as level, health and game clock. Move values that rarely change to a
+  state provider to make events smaller. A game that registers no state
+  provider keeps all of its context on every event.
+
 ## 0.2.0 — Unreleased
 
 ### Changed (breaking)

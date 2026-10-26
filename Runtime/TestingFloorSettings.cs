@@ -32,6 +32,12 @@ namespace TestingFloorSdk {
         public float movementMinPingCameraDistance = 0.5f;
         public float movementMinStepCameraDistance = 0.005f;
 
+        public const float DefaultObjectSampleRateHz = 4f;
+        public const int DefaultMaxTrackedObjects = 256;
+
+        [Range(1f, 10f)] public float objectSampleRateHz = DefaultObjectSampleRateHz;
+        public int maxTrackedObjects = DefaultMaxTrackedObjects;
+
         public int queueMaxEvents = 4096;
         public int batchMaxEvents = 50;
         public float batchMaxFlushIntervalSeconds = 0.25f;
@@ -66,6 +72,15 @@ namespace TestingFloorSdk {
                 return Mathf.Max(1f, qrHeartbeatIntervalSeconds);
             }
         }
+
+        internal float EffectiveObjectSampleRateHz {
+            get {
+                if (float.IsNaN(objectSampleRateHz) || float.IsInfinity(objectSampleRateHz)) return DefaultObjectSampleRateHz;
+                return Mathf.Clamp(objectSampleRateHz, 1f, 10f);
+            }
+        }
+
+        internal int EffectiveMaxTrackedObjects => Mathf.Max(1, maxTrackedObjects);
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         static void ResetStatics() {
