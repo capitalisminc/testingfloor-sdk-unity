@@ -373,7 +373,7 @@ namespace TestingFloorSdk {
                 userId: UserId,
                 timestampMs: timestampMs,
                 sessionId: PlaySessionId,
-                seq: ++_seq
+                seq: _seq + 1
             );
 
             return Enqueue(ev);
@@ -455,16 +455,19 @@ namespace TestingFloorSdk {
                 userId: UserId,
                 timestampMs: timestampMs,
                 sessionId: PlaySessionId,
-                seq: ++_seq,
+                seq: _seq + 1,
                 keyframe: keyframe,
                 kind: kind
             );
             return Enqueue(ev);
         }
 
+        // A record the queue refuses was never queued, so it does not use a seq.
         static bool Enqueue(TelemetryEvent ev) {
             var capture = s_captureForTesting;
-            return capture != null ? capture(ev) : TelemetryQueue.Enqueue(ev, _settings, GetClient, ApplySendResult);
+            var queued = capture != null ? capture(ev) : TelemetryQueue.Enqueue(ev, _settings, GetClient, ApplySendResult);
+            if (queued) _seq = ev.Seq;
+            return queued;
         }
 
         // `$tf_objects` records copy the level of the most recent event.

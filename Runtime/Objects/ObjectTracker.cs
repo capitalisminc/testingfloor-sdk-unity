@@ -171,13 +171,18 @@ namespace TestingFloorSdk.Internal {
                     continue;
                 }
 
+                // The position read at registration is the object's first sample.
+                var pending = entry.Pending;
                 entry.Pending = null;
                 entry.HasObserved = true;
                 entry.LastObserved = position.Value;
-                var sample = keyframe || !entry.HasSent || (position.Value - entry.LastSent).sqrMagnitude >= minDistanceSquared;
-                if (!sample && entry.ChangedKeys.Count == 0) continue;
+                var hasSample = pending.HasValue || entry.HasSent;
+                var reference = pending ?? entry.LastSent;
+                var sample = !hasSample || (keyframe && !pending.HasValue) || (position.Value - reference).sqrMagnitude >= minDistanceSquared;
+                if (!pending.HasValue && !sample && entry.ChangedKeys.Count == 0) continue;
 
                 _builder.BeginGroup();
+                if (pending.HasValue) AppendSample(entry, pending.Value);
                 if (sample) AppendSample(entry, position.Value);
                 AppendState(entry, keyframe);
                 _builder.EndGroup();

@@ -72,6 +72,22 @@ namespace TestingFloorSdk.Tests {
         }
 
         [Test]
+        public void FirstSampleIsThePositionReadAtRegistration() {
+            var tracker = new ObjectTracker();
+            var rocket = new Point(Vector3.zero);
+            Register(tracker, "rocket", rocket);
+            rocket.Position = new Vector3(0.1f, 0, 0);
+            CollectionAssert.AreEqual(new[] { 0.0 }, Numbers(Check(tracker, 0)[0], "sample.x"), "A move below the threshold adds no sample");
+
+            var crate = new Point(Vector3.zero);
+            Register(tracker, "crate", crate);
+            crate.Position = new Vector3(3, 0, 0);
+            var record = Check(tracker, 0.25)[0];
+            CollectionAssert.AreEqual(new[] { "crate#1", "crate#1" }, Strings(record, "sample.id"));
+            CollectionAssert.AreEqual(new[] { 0.0, 3.0 }, Numbers(record, "sample.x"));
+        }
+
+        [Test]
         public void NoRecordIsSentWhenNothingChanged() {
             var tracker = new ObjectTracker();
             Assert.IsEmpty(Check(tracker, 0), "No objects");

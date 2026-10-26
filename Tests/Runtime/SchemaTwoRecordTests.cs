@@ -81,6 +81,22 @@ namespace TestingFloorSdk.Tests {
         }
 
         [Test]
+        public void RecordTheQueueRefusesDoesNotUseASeq() {
+            global::TestingFloorSdk.TestingFloor.CaptureRecordsForTesting(ev => {
+                if (ev.EventType == "refused") return false;
+                _records.Add(ev);
+                return true;
+            }, _settings);
+
+            global::TestingFloorSdk.TestingFloor.SetState("difficulty", "hard");
+            Assert.IsFalse(global::TestingFloorSdk.TestingFloor.Track("refused").Send());
+            global::TestingFloorSdk.TestingFloor.Track("door_opened").Send();
+
+            CollectionAssert.AreEqual(new[] { "$tf_state", "door_opened" }, Names());
+            CollectionAssert.AreEqual(new long[] { 1, 2 }, Seqs());
+        }
+
+        [Test]
         public void StateChangeIsQueuedImmediatelyBeforeItsEvent() {
             global::TestingFloorSdk.TestingFloor.SetState("difficulty", "normal");
             global::TestingFloorSdk.TestingFloor.Track("level_started").Send();
