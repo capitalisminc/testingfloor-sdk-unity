@@ -11,7 +11,15 @@
   count toward `dropped_events` and trigger the next keyframe.
 - Quitting or leaving Play mode now sends the last session state change and
   object movement before the recording completion marker. Before, changes
-  after the last once-a-second poll were lost.
+  after the last once-a-second poll were lost. The SDK repeats the object
+  check until removals carried to a later check, and the later lifetimes of an
+  id they hold back, are sent. It stops if the queue refuses a record, and
+  counts whatever still waits toward `dropped_events`.
+- When the queue refused part of a large keyframe, the next keyframe started
+  from the same objects, so the last ones were never sent. Live objects from a
+  refused record now come first in the next check.
+- Consecutive object checks always get increasing `$time`, so readers that
+  order rows by time keep the checks apart.
 
 ## 0.4.1
 

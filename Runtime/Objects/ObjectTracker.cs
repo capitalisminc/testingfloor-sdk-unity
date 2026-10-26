@@ -125,6 +125,36 @@ namespace TestingFloorSdk.Internal {
         internal int LiveCount => _live.Count;
         internal int RetryCount => _retries.Count;
 
+        /// <summary>Removals still waiting to be sent: carried to a later check or retried.</summary>
+        internal int WaitingRemovalCount => _removals.Count + _retries.Count;
+
+        /// <summary>Waiting removals plus live objects whose first sample is still held back.</summary>
+        internal int WaitingCount {
+            get {
+                var count = WaitingRemovalCount;
+                for (var i = 0; i < _live.Count; i++) {
+                    if (!_live[i].HasSent && _live[i].Pending.HasValue) count++;
+                }
+                return count;
+            }
+        }
+
+        /// <summary>
+        /// Moves the live objects with these ids to the front, in their current order, so the next
+        /// check reaches them before the rest. A record that the queue refuses would otherwise be
+        /// refused again at the next keyframe, and the same objects would never be sent.
+        /// </summary>
+        public void Prioritize(string[] ids) {
+            if (ids == null || ids.Length == 0) return;
+            var first = new HashSet<string>(ids, StringComparer.Ordinal);
+            var front = new List<Entry>();
+            var back = new List<Entry>();
+            foreach (var entry in _live) (first.Contains(entry.Id) ? front : back).Add(entry);
+            _live.Clear();
+            _live.AddRange(front);
+            _live.AddRange(back);
+        }
+
         public void RequestKeyframe() {
             _keyframeDue = true;
         }

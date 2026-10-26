@@ -350,6 +350,68 @@ namespace TestingFloorSdk.Tests {
         }
 
         [Test]
+        public void QuitSendsEveryWaitingLifetimeOfAnIdInItsOwnRecord() {
+            var first = global::TestingFloorSdk.TestingFloor.TrackObject("guard", () => new Vector3(1, 0, 0), "guard_a");
+            global::TestingFloorSdk.TestingFloor.Tick(0);
+            _records.Clear();
+            first.Remove("knocked_out");
+            global::TestingFloorSdk.TestingFloor.TrackObject("guard", () => new Vector3(2, 0, 0), "guard_a").Remove("despawned");
+            global::TestingFloorSdk.TestingFloor.TrackObject("guard", () => new Vector3(3, 0, 0), "guard_a");
+
+            global::TestingFloorSdk.TestingFloor.FinishRecordingAndFlush();
+
+            var objects = _records.Where(r => r.EventType == "$tf_objects").ToList();
+            Assert.AreEqual(3, objects.Count, "One record per lifetime of guard_a");
+            CollectionAssert.AreEqual(new[] { "knocked_out" }, (string[])objects[0].EventProperties["removed.reason"]);
+            CollectionAssert.AreEqual(new[] { 2.0 }, (double[])objects[1].EventProperties["sample.x"]);
+            CollectionAssert.AreEqual(new[] { "despawned" }, (string[])objects[1].EventProperties["removed.reason"]);
+            CollectionAssert.AreEqual(new[] { 3.0 }, (double[])objects[2].EventProperties["sample.x"]);
+            Assert.Less(objects[0].TimestampMs, objects[1].TimestampMs);
+            Assert.Less(objects[1].TimestampMs, objects[2].TimestampMs);
+            Assert.AreEqual(0, TelemetryQueue.DroppedEventCount);
+        }
+
+        [Test]
+        public void QuitCountsObjectChangesItCannotSend() {
+            var refuseObjects = false;
+            global::TestingFloorSdk.TestingFloor.CaptureRecordsForTesting(ev => !(refuseObjects && ev.EventType == "$tf_objects"), _settings);
+            var first = global::TestingFloorSdk.TestingFloor.TrackObject("guard", () => Vector3.one, "guard_a");
+            global::TestingFloorSdk.TestingFloor.Tick(0);
+            refuseObjects = true;
+            first.Remove("knocked_out");
+            global::TestingFloorSdk.TestingFloor.TrackObject("guard", () => Vector3.zero, "guard_a");
+
+            global::TestingFloorSdk.TestingFloor.FinishRecordingAndFlush();
+
+            Assert.AreEqual(2, TelemetryQueue.DroppedEventCount, "The retried removal and the held-back replacement");
+        }
+
+        [Test]
+        public void RefusedKeyframeObjectsGoFirstSoEveryObjectIsReached() {
+            _settings.maxTrackedObjects = 700;
+            var accepted = 0;
+            var delivered = new HashSet<string>();
+            global::TestingFloorSdk.TestingFloor.CaptureRecordsForTesting(ev => {
+                if (ev.EventType != "$tf_objects") return true;
+                if (accepted >= 2) {
+                    TelemetryQueue.CountDropped(1, recording: false);
+                    return false;
+                }
+                accepted++;
+                foreach (var id in (string[])ev.EventProperties["sample.id"]) delivered.Add(id);
+                return true;
+            }, _settings);
+            for (var i = 0; i < 650; i++) global::TestingFloorSdk.TestingFloor.TrackObject("crate", () => Vector3.one);
+
+            global::TestingFloorSdk.TestingFloor.Tick(0);
+            Assert.AreEqual(600, delivered.Count, "The third record of the first check is refused");
+            accepted = 0;
+            global::TestingFloorSdk.TestingFloor.Tick(1);
+
+            Assert.AreEqual(650, delivered.Count, "The recovery keyframe starts with the refused objects");
+        }
+
+        [Test]
         public void DisabledCollectionReturnsAHandleThatDoesNothing() {
             global::TestingFloorSdk.TestingFloor.ResetForTesting();
             global::TestingFloorSdk.TestingFloor.SetForceDisabled(true);
