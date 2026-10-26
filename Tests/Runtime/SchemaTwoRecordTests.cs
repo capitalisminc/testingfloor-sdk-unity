@@ -411,6 +411,154 @@ namespace TestingFloorSdk.Tests {
             Assert.AreEqual(650, delivered.Count, "The recovery keyframe starts with the refused objects");
         }
 
+        sealed class BarrierSender : IBatchSender {
+            internal Func<IReadOnlyList<TelemetryEvent>, Task<BatchSendOutcome>> Respond;
+            public async ValueTask<BatchSendOutcome> TrackBatchAsync(IReadOnlyList<TelemetryEvent> events) => await Respond(events);
+        }
+
+        [Test]
+        public void RecordingCloseSendsBufferedStateAndRemovalBeforeTheMarker() {
+            var directory = System.IO.Path.Combine(System.IO.Path.GetTempPath(), Guid.NewGuid().ToString());
+            System.IO.Directory.CreateDirectory(directory);
+            try {
+                var recording = new TestingFloorRecording("example-recording", null, true, directory);
+                TestingFloorRecording.UseForTesting(recording);
+                Assert.IsTrue(global::TestingFloorSdk.TestingFloor.RegisterRecording(recording));
+                var position = Vector3.one;
+                global::TestingFloorSdk.TestingFloor.SetState("difficulty", "normal");
+                var crate = global::TestingFloorSdk.TestingFloor.TrackObject("crate", () => position, "crate");
+                global::TestingFloorSdk.TestingFloor.Track("level_started").Send();
+                global::TestingFloorSdk.TestingFloor.Tick(0);
+                _records.Clear();
+
+                // Both change before the next state poll and object check, and then the recording closes.
+                global::TestingFloorSdk.TestingFloor.SetState("difficulty", "hard");
+                position = new Vector3(4, 0, 4);
+                crate.Remove("destroyed");
+                System.IO.File.WriteAllText(System.IO.Path.Combine(directory, "closed.json"), "1");
+                RecordingTelemetry.Poll();
+
+                CollectionAssert.AreEqual(new[] { "$tf_state", "$tf_objects", "$tf_telemetry_complete" }, Names());
+                Assert.AreEqual("hard", _records[0].EventProperties["difficulty"]);
+                CollectionAssert.AreEqual(new[] { "destroyed" }, (string[])_records[1].EventProperties["removed.reason"]);
+                Assert.AreSame(recording, _records[0].Recording);
+                Assert.AreSame(recording, _records[1].Recording);
+                Assert.Less(_records[0].Seq, _records[1].Seq);
+                Assert.Less(_records[1].Seq, _records[2].Seq);
+            }
+            finally {
+                RecordingTelemetry.ResetStatics();
+                System.IO.Directory.Delete(directory, true);
+            }
+        }
+
+        [Test]
+        public void RecordingCloseToleratesCallbacksThatSendEvents() {
+            var directory = System.IO.Path.Combine(System.IO.Path.GetTempPath(), Guid.NewGuid().ToString());
+            System.IO.Directory.CreateDirectory(directory);
+            try {
+                var recording = new TestingFloorRecording("example-recording", null, true, directory);
+                TestingFloorRecording.UseForTesting(recording);
+                Assert.IsTrue(global::TestingFloorSdk.TestingFloor.RegisterRecording(recording));
+                global::TestingFloorSdk.TestingFloor.TrackObject("crate", () => {
+                    global::TestingFloorSdk.TestingFloor.Track("crate_sampled").Send();
+                    return Vector3.one;
+                }, "crate");
+                _records.Clear();
+
+                System.IO.File.WriteAllText(System.IO.Path.Combine(directory, "closed.json"), "1");
+                RecordingTelemetry.Poll();
+
+                Assert.IsTrue(recording.Closed);
+                Assert.AreEqual(1, Names().Count(name => name == "$tf_telemetry_complete"));
+                var marker = Array.IndexOf(Names(), "$tf_telemetry_complete");
+                var sampled = Array.IndexOf(Names(), "crate_sampled");
+                Assert.That(sampled, Is.GreaterThanOrEqualTo(0).And.LessThan(marker), "The callback's event joins the recording ahead of its marker");
+                Assert.AreSame(recording, _records[sampled].Recording);
+            }
+            finally {
+                RecordingTelemetry.ResetStatics();
+                System.IO.Directory.Delete(directory, true);
+            }
+        }
+
+        [Test]
+        public void RecordingCloseSeenDuringAnObjectCheckWaitsForTheCheckToFinish() {
+            var directory = System.IO.Path.Combine(System.IO.Path.GetTempPath(), Guid.NewGuid().ToString());
+            System.IO.Directory.CreateDirectory(directory);
+            try {
+                var recording = new TestingFloorRecording("example-recording", null, true, directory);
+                TestingFloorRecording.UseForTesting(recording);
+                Assert.IsTrue(global::TestingFloorSdk.TestingFloor.RegisterRecording(recording));
+                global::TestingFloorSdk.TestingFloor.TrackObject("crate", () => Vector3.one, "crate_a");
+                global::TestingFloorSdk.TestingFloor.TrackObject("crate", () => {
+                    global::TestingFloorSdk.TestingFloor.Track("crate_sampled").Send();
+                    return Vector3.zero;
+                }, "crate_b");
+                _records.Clear();
+
+                // The recorder closes the recording, and the first poll to see it comes from the
+                // second crate's callback, in the middle of an object check.
+                System.IO.File.WriteAllText(System.IO.Path.Combine(directory, "closed.json"), "1");
+                global::TestingFloorSdk.TestingFloor.Tick(0);
+                RecordingTelemetry.Poll();
+
+                var names = Names();
+                var marker = Array.IndexOf(names, "$tf_telemetry_complete");
+                Assert.GreaterOrEqual(marker, 0);
+                var sampled = _records.Take(marker)
+                    .Where(r => r.EventType == "$tf_objects" && r.EventProperties.ContainsKey("sample.id"))
+                    .SelectMany(r => (string[])r.EventProperties["sample.id"]).ToList();
+                CollectionAssert.AreEquivalent(new[] { "crate_a", "crate_b" }, sampled.Distinct(), "No sample of the active check is lost");
+                Assert.IsTrue(_records.Take(marker).All(r => r.Recording == recording));
+            }
+            finally {
+                RecordingTelemetry.ResetStatics();
+                System.IO.Directory.Delete(directory, true);
+            }
+        }
+
+        [Test]
+        public async Task RemovalRefusedAtRecordingCloseCountsTowardTheMarker() {
+            var directory = System.IO.Path.Combine(System.IO.Path.GetTempPath(), Guid.NewGuid().ToString());
+            System.IO.Directory.CreateDirectory(directory);
+            var first = new TaskCompletionSource<BatchSendOutcome>();
+            var calls = 0;
+            var markerLoss = -1;
+            var sender = new BarrierSender { Respond = events => {
+                calls++;
+                if (calls == 1) return first.Task;
+                foreach (var ev in events) {
+                    if (ev.EventType == "$tf_telemetry_complete") markerLoss = Convert.ToInt32(ev.EventProperties["dropped_events"]);
+                }
+                return Task.FromResult(new BatchSendOutcome(SendResult.Success, events.Count));
+            }};
+            _settings.queueMaxEvents = 1;
+            _settings.batchMaxFlushIntervalSeconds = 0;
+            global::TestingFloorSdk.TestingFloor.QueueRecordsForTesting(sender, _settings);
+            try {
+                var recording = new TestingFloorRecording("example-recording", null, true, directory);
+                TestingFloorRecording.UseForTesting(recording);
+                Assert.IsTrue(global::TestingFloorSdk.TestingFloor.RegisterRecording(recording));
+                var crate = global::TestingFloorSdk.TestingFloor.TrackObject("crate", () => Vector3.one, "crate");
+                Assert.IsTrue(global::TestingFloorSdk.TestingFloor.Track("level_started").Send(), "Takes the only queue slot");
+
+                crate.Remove("destroyed");
+                System.IO.File.WriteAllText(System.IO.Path.Combine(directory, "closed.json"), "1");
+                RecordingTelemetry.Poll();
+                first.SetResult(new BatchSendOutcome(SendResult.Success, 1));
+
+                var deadline = DateTime.UtcNow.AddSeconds(4);
+                while (markerLoss < 0 && DateTime.UtcNow < deadline) await Task.Delay(10);
+                Assert.AreEqual(1, markerLoss, "The removal refused while the recording was open is part of its loss");
+            }
+            finally {
+                RecordingTelemetry.ResetStatics();
+                TelemetryQueue.ResetStatics();
+                System.IO.Directory.Delete(directory, true);
+            }
+        }
+
         [Test]
         public void DisabledCollectionReturnsAHandleThatDoesNothing() {
             global::TestingFloorSdk.TestingFloor.ResetForTesting();
