@@ -19,7 +19,7 @@ namespace TestingFloorSdk.Internal {
         static List<TelemetryEvent> _activeBatch;
         static bool _requestInFlight;
         static int _dropped;
-        static int _recordingDropped;
+        static Dictionary<string, int> _recordingDropped = new(StringComparer.Ordinal);
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         internal static void ResetStatics() {
@@ -35,7 +35,7 @@ namespace TestingFloorSdk.Internal {
                 _activeBatch = null;
                 _requestInFlight = false;
                 _dropped = 0;
-                _recordingDropped = 0;
+                _recordingDropped = new Dictionary<string, int>(StringComparer.Ordinal);
             }
         }
 
@@ -65,16 +65,36 @@ namespace TestingFloorSdk.Internal {
             if (count <= 0) return;
             lock (QueueLock) {
                 _dropped += count;
-                if (recording) _recordingDropped += count;
+                if (recording) {
+                    var active = TestingFloorRecording.Current;
+                    AddRecordingDrops(active, TestingFloor.PlaySessionId, count);
+                }
             }
         }
+
+        static string RecordingKey(TestingFloorRecording recording, string session) => recording == null ? null : recording.RecordingUuid + "\0" + session;
+
+        static void AddRecordingDrops(TestingFloorRecording recording, string session, int count) {
+            var key = RecordingKey(recording, session);
+            if (key == null) return;
+            _recordingDropped.TryGetValue(key, out var previous);
+            _recordingDropped[key] = previous + count;
+        }
+
+        static int RecordingDrops(TelemetryEvent marker) {
+            var key = RecordingKey(marker.Recording, marker.SessionId);
+            return key != null && _recordingDropped.TryGetValue(key, out var count) ? count : 0;
+        }
+
+        static bool SameAssociation(TelemetryEvent first, TelemetryEvent next) =>
+            string.Equals(RecordingKey(first.Recording, first.SessionId), RecordingKey(next.Recording, next.SessionId), StringComparison.Ordinal);
 
         public static bool Enqueue(TelemetryEvent ev, TestingFloorSettings settings, Func<IBatchSender> clientFactory, Action<SendResult> onResult) {
             lock (QueueLock) {
                 if (ev.EventType != "$tf_telemetry_complete" && _pending.Count + _inFlight >= Math.Max(1, settings != null ? settings.queueMaxEvents : 4096)) {
                     Release(ev);
                     _dropped++;
-                    if (CollectorClient.IsRecordingGameplay(ev)) _recordingDropped++;
+                    if (CollectorClient.IsRecordingGameplay(ev)) AddRecordingDrops(ev.Recording, ev.SessionId, 1);
                     return false;
                 }
                 _pending.Enqueue(ev);
@@ -96,7 +116,14 @@ namespace TestingFloorSdk.Internal {
         static void ApplyOutcome(List<TelemetryEvent> batch, BatchSendOutcome outcome) {
             lock (QueueLock) {
                 var consumed = Math.Clamp(outcome.Consumed, 0, batch.Count);
-                _recordingDropped += Math.Clamp(outcome.RecordingDropped, 0, consumed);
+                var recordingDropped = Math.Clamp(outcome.RecordingDropped, 0, consumed);
+                if (recordingDropped > 0) {
+                    for (var i = 0; i < consumed; i++) {
+                        if (!CollectorClient.IsRecordingGameplay(batch[i])) continue;
+                        AddRecordingDrops(batch[i].Recording, batch[i].SessionId, recordingDropped);
+                        break;
+                    }
+                }
                 for (var i = 0; i < consumed; i++) Release(batch[i]);
                 _dropped += Math.Clamp(outcome.Dropped, 0, consumed);
                 var retained = new Queue<TelemetryEvent>();
@@ -111,7 +138,7 @@ namespace TestingFloorSdk.Internal {
                     _dropped += _pending.Count;
                     while (_pending.Count > 0) {
                         var ev = _pending.Dequeue();
-                        if (CollectorClient.IsRecordingGameplay(ev)) _recordingDropped++;
+                        if (CollectorClient.IsRecordingGameplay(ev)) AddRecordingDrops(ev.Recording, ev.SessionId, 1);
                         Release(ev);
                     }
                 }
@@ -134,9 +161,9 @@ namespace TestingFloorSdk.Internal {
                 var batch = new List<TelemetryEvent>();
                 var maximum = Math.Clamp(settings != null ? settings.batchMaxEvents : 50, 1, 2000);
                 while (batch.Count < maximum && _pending.Count > 0) {
-                    if (batch.Count > 0 && _pending.Peek().EventType == "$tf_telemetry_complete") break;
+                    if (batch.Count > 0 && (_pending.Peek().EventType == "$tf_telemetry_complete" || !SameAssociation(batch[0], _pending.Peek()))) break;
                     var next = _pending.Dequeue();
-                    if (next.EventType == "$tf_telemetry_complete") next.EventProperties["dropped_events"] = _recordingDropped;
+                    if (next.EventType == "$tf_telemetry_complete") next.EventProperties["dropped_events"] = RecordingDrops(next);
                     batch.Add(next);
                     if (next.EventType == "$tf_telemetry_complete") break;
                 }
@@ -168,9 +195,9 @@ namespace TestingFloorSdk.Internal {
                     while (true) {
                         lock (QueueLock) {
                             while (batch.Count < maximum && _pending.Count > 0) {
-                                if (batch.Count > 0 && _pending.Peek().EventType == "$tf_telemetry_complete") break;
+                                if (batch.Count > 0 && (_pending.Peek().EventType == "$tf_telemetry_complete" || !SameAssociation(batch[0], _pending.Peek()))) break;
                                 var next = _pending.Dequeue();
-                                if (next.EventType == "$tf_telemetry_complete") next.EventProperties["dropped_events"] = _recordingDropped;
+                                if (next.EventType == "$tf_telemetry_complete") next.EventProperties["dropped_events"] = RecordingDrops(next);
                                 batch.Add(next);
                                 if (next.EventType == "$tf_telemetry_complete") break;
                             }

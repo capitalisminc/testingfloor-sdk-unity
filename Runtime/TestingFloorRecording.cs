@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using UnityEngine;
+using TestingFloorSdk.Internal;
 
 namespace TestingFloorSdk {
     /// <summary>
@@ -17,6 +18,22 @@ namespace TestingFloorSdk {
         public bool SuppressQr { get; }
         public string TelemetryDirectory { get; }
         internal bool Closed { get; set; }
+        internal bool Suspended { get; set; }
+        internal bool Interrupted { get; set; }
+        internal int LeaseVersion { get; set; }
+        internal int EditorPid { get; set; }
+        internal bool TelemetryRequested { get; set; }
+        internal long LeaseExpiresAtUnixMs { get; set; }
+
+        internal bool HasLease => LeaseVersion == 1 && TelemetryRequested &&
+            LeaseExpiresAtUnixMs > 0 && !string.IsNullOrWhiteSpace(TelemetryDirectory);
+        internal bool LeaseActive(long now) => HasLease && LeaseExpiresAtUnixMs > now && LeaseExpiresAtUnixMs <= now + 30000;
+
+        internal void RefreshLease(TestingFloorRecording candidate) {
+            LeaseVersion = candidate.LeaseVersion;
+            TelemetryRequested = candidate.TelemetryRequested;
+            LeaseExpiresAtUnixMs = candidate.LeaseExpiresAtUnixMs;
+        }
 
         internal TestingFloorRecording(string recordingUuid, long? playtestId, bool suppressQr, string telemetryDirectory = null) {
             RecordingUuid = recordingUuid;
@@ -29,30 +46,37 @@ namespace TestingFloorSdk {
         const string RecordingPayloadFileName = "recording-payload.json";
         const int MaxPayloadAgeHours = 12;
 
-        static bool _resolved;
         static TestingFloorRecording _current;
+        internal static Func<TestingFloorRecording> DiscoveryForTesting;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         internal static void ResetStatics() {
-            // Re-resolve on every Play start (and editor domain reload). The
-            // recorder leaves the sidecar payload in place for the lifetime of
-            // the recording, so re-reading is what lets a single recording
-            // span multiple Play sessions in the editor.
-            _resolved = false;
             _current = null;
+            DiscoveryForTesting = null;
         }
 
         public static TestingFloorRecording Current {
             get {
-                if (_resolved) return _current != null && !_current.Closed ? _current : null;
-                _resolved = true;
-                _current = ResolveFromArgs() ?? ResolveFromSidecar();
-                return _current;
+                TestingFloor.RefreshRecordingContext();
+                return _current != null && !_current.Closed && !_current.Suspended ? _current : null;
             }
         }
 
+        internal static TestingFloorRecording Attached => _current;
+        internal static void SetActive(TestingFloorRecording recording) => _current = recording;
+
+        internal static TestingFloorRecording Discover() {
+            if (DiscoveryForTesting != null) return DiscoveryForTesting();
+            // A new editor handoff takes precedence over an argument from editor startup.
+            var candidate = Application.isEditor ? ResolveFromSidecar() ?? ResolveFromArgs() : ResolveFromArgs() ?? ResolveFromSidecar();
+            if (Application.isEditor && candidate != null && candidate.EditorPid > 0) {
+                using var process = System.Diagnostics.Process.GetCurrentProcess();
+                if (candidate.EditorPid != process.Id) return null;
+            }
+            return candidate;
+        }
+
         internal static void UseForTesting(TestingFloorRecording recording) {
-            _resolved = true;
             _current = recording;
         }
 
@@ -130,7 +154,12 @@ namespace TestingFloorSdk {
                 }
             }
 
-            return new TestingFloorRecording(recordingUuid, PayloadPlaytestId(payload), payload.suppress_qr, Normalized(payload.telemetry_directory));
+            return new TestingFloorRecording(recordingUuid, PayloadPlaytestId(payload), payload.suppress_qr, Normalized(payload.telemetry_directory)) {
+                LeaseVersion = payload.lease_version,
+                EditorPid = payload.editor_pid,
+                TelemetryRequested = payload.telemetry_requested,
+                LeaseExpiresAtUnixMs = payload.lease_expires_at_unix_ms,
+            };
         }
 
         static string[] GetSidecarPaths() {
@@ -156,6 +185,10 @@ namespace TestingFloorSdk {
 
         [Serializable]
         sealed class Payload {
+            public int lease_version;
+            public int editor_pid;
+            public bool telemetry_requested;
+            public long lease_expires_at_unix_ms;
             public string recording_uuid;
             public string telemetry_directory;
             public long playtest_id;

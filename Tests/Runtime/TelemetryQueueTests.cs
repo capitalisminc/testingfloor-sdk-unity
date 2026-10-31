@@ -34,6 +34,40 @@ namespace TestingFloorSdk.Tests {
             }
         }
 
+        sealed class RecordingSender : IBatchSender {
+            public readonly TaskCompletionSource<BatchSendOutcome> First = new();
+            public readonly Dictionary<string, int> CompletedDrops = new();
+            int _calls;
+
+            public ValueTask<BatchSendOutcome> TrackBatchAsync(IReadOnlyList<TelemetryEvent> events) {
+                if (++_calls == 1) return new ValueTask<BatchSendOutcome>(First.Task);
+                foreach (var ev in events) {
+                    if (ev.EventType == "$tf_telemetry_complete") CompletedDrops[ev.Recording.RecordingUuid] = Convert.ToInt32(ev.EventProperties["dropped_events"]);
+                }
+                return new ValueTask<BatchSendOutcome>(new BatchSendOutcome(SendResult.Success, events.Count));
+            }
+        }
+
+        [Test]
+        public async Task CompletionDropCountersRemainSeparateWhenRecordingsShareAPlaySession() {
+            var first = new TestingFloorRecording("example-first", null, true);
+            var second = new TestingFloorRecording("example-second", null, true);
+            TelemetryEvent Record(string name, TestingFloorRecording recording) => new(name, new Dictionary<string, object>(),
+                ContextSnapshot.Create(default), null, null, 0, "same-play", recording);
+            _settings.queueMaxEvents = 1;
+            var sender = new RecordingSender();
+            Assert.IsTrue(TelemetryQueue.Enqueue(Record("first", first), _settings, () => sender, null));
+            Assert.IsFalse(TelemetryQueue.Enqueue(Record("overflow", first), _settings, () => sender, null));
+            _settings.queueMaxEvents = 8;
+            TelemetryQueue.Enqueue(Record("$tf_telemetry_complete", first), _settings, () => sender, null);
+            TelemetryQueue.Enqueue(Record("second", second), _settings, () => sender, null);
+            TelemetryQueue.Enqueue(Record("$tf_telemetry_complete", second), _settings, () => sender, null);
+            sender.First.SetResult(new BatchSendOutcome(SendResult.Success, 1));
+            await Until(() => !TelemetryQueue.HasPending());
+            Assert.AreEqual(1, sender.CompletedDrops["example-first"]);
+            Assert.AreEqual(0, sender.CompletedDrops["example-second"]);
+        }
+
         static TelemetryEvent Event(string name) => new(name, null, ContextSnapshot.Create(default), null, null, 0, "example-play");
         static async Task Until(Func<bool> condition) {
             var deadline = DateTime.UtcNow.AddSeconds(4);

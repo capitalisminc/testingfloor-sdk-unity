@@ -4,11 +4,15 @@ namespace TestingFloorSdk {
     internal static class MovementDriver {
         static GameObject _trackerGo;
         static bool? _enabledOverride;
+        static int _resetVersion;
+        internal static int ResetVersion => _resetVersion;
+        internal static void RequestReset() => _resetVersion++;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         static void ResetStatics() {
             _trackerGo = null;
             _enabledOverride = null;
+            _resetVersion = 0;
         }
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
@@ -32,6 +36,7 @@ namespace TestingFloorSdk {
 
         internal static void ClearEnabledOverride() {
             _enabledOverride = null;
+            _resetVersion = 0;
             Apply();
         }
 

@@ -6,6 +6,7 @@ namespace TestingFloorSdk.Editor {
     public sealed class TestingFloorSettingsInspector : UnityEditor.Editor {
         SerializedProperty _enabled;
         SerializedProperty _enableInEditor;
+        SerializedProperty _enableInEditorWhileRecording;
         SerializedProperty _logErrors;
         SerializedProperty _logEventSends;
         SerializedProperty _writeKey;
@@ -39,6 +40,7 @@ namespace TestingFloorSdk.Editor {
         void OnEnable() {
             _enabled = serializedObject.FindProperty("enabled");
             _enableInEditor = serializedObject.FindProperty("enableInEditor");
+            _enableInEditorWhileRecording = serializedObject.FindProperty("enableInEditorWhileRecording");
             _logErrors = serializedObject.FindProperty("logErrors");
             _logEventSends = serializedObject.FindProperty("logEventSends");
             _writeKey = serializedObject.FindProperty("writeKey");
@@ -71,7 +73,8 @@ namespace TestingFloorSdk.Editor {
 
             EditorGUILayout.LabelField("General", EditorStyles.boldLabel);
             EditorGUILayout.PropertyField(_enabled);
-            EditorGUILayout.PropertyField(_enableInEditor);
+            EditorGUILayout.PropertyField(_enableInEditor, new GUIContent("Collect During Ordinary Editor Play"));
+            EditorGUILayout.PropertyField(_enableInEditorWhileRecording, new GUIContent("Collect While Recording", "Permit telemetry during an active Testing Floor recording, even when ordinary editor telemetry is off."));
             EditorGUILayout.PropertyField(_logErrors);
             EditorGUILayout.PropertyField(_logEventSends);
 

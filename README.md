@@ -10,7 +10,7 @@ Requires Unity 6 and a Testing Floor game write key. Licensed under MIT.
    `https://github.com/capitalisminc/testingfloor-sdk-unity.git`.
 2. Select **Tools -> Testing Floor -> Create Settings Asset**.
 3. Paste your game's write key into the asset. Keep real keys out of source control.
-4. Enable **Enable In Editor** while checking the integration in Play mode.
+4. Editor telemetry defaults to **Collect While Recording**. Enable **Collect During Ordinary Editor Play** only when you also want telemetry outside recordings.
 
 ```csharp
 using TestingFloorSdk;
@@ -188,10 +188,40 @@ The SDK creates a fresh `PlaySessionId` on each game launch or editor Play run.
 `TestingFloor.Recording?.RecordingUuid` identifies a recording that can span
 several Play runs. No synthetic session bookend events are emitted.
 
-The desktop recorder passes `--testing-floor={"recording_uuid":"..."}` or writes
-`Library/TestingFloor/recording-payload.json`. The SDK reads the sidecar at each
-Play start; the recorder owns its cleanup. Do not construct handoffs manually
-for normal recorder use.
+The desktop app passes `--testing-floor={"recording_uuid":"..."}` or writes
+`Library/TestingFloor/recording-payload.json`. It owns the handoff and its cleanup.
+The SDK watches for changes during Play, including while paused. Start a recording
+before or after Play, stop it, and start another without restarting the game.
+Each recording receives fresh state and object keyframes while the Play run ID
+stays the same.
+
+`enableInEditor` defaults to false; `enableInEditorWhileRecording` defaults to true.
+Set both false for no editor telemetry, or set `enableInEditor` true for ordinary
+editor telemetry too. The master switch, force-disable, automation restrictions
+and collector configuration still apply. `TestingFloor.IsCollecting` and
+`TestingFloor.CollectionReason` expose the effective policy; game wrappers should
+query them instead of caching an editor-off decision or choosing a permanent null
+client. Subscribe to `TestingFloor.RecordingChanged` to invalidate recording-specific
+caches or update external error-reporting tags. It receives the active recording on
+attach/resume and null on detach/suspension, before new attachment keyframes. Also
+synchronize once after subscribing, since a recording may already be attached.
+Register context/state providers and tracked objects even while dormant;
+the SDK retains handles without sampling them until collection becomes active.
+
+Recording-only collection requires an active desktop app lease. The additive
+handoff fields are `lease_version: 1`, `telemetry_requested: true`, and
+`lease_expires_at_unix_ms`, alongside `recording_uuid` and `telemetry_directory`.
+The app renews the lease while recording. An expired lease suspends association;
+renewal sends new keyframes and retains an interruption flag. A closed recording
+cannot reopen in the same Play run. Static legacy handoffs retain their existing
+behavior when ordinary editor collection is enabled, but do not override editor-off
+policy. Do not construct handoffs manually for normal desktop app use.
+
+The SDK registers `<run UUID>.session` before admitting recording events and writes
+`<run UUID>.status.json` with attachment state, reason, capabilities and freshness.
+Local attachment is not a warehouse delivery acknowledgement. Completion markers
+are ordered behind accepted data and report drop counts and interruptions for that
+recording alone. Accepted batches can finish uploading after recording stops.
 
 For OBS or other external capture, show the built-in marker while recording:
 

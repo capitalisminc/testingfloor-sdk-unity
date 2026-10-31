@@ -12,14 +12,16 @@ namespace TestingFloorSdk.Internal {
 
         Dictionary<string, object> _sent = new(StringComparer.Ordinal);
         bool _keyframeDue = true;
+        bool _includeEmptyKeyframe;
         bool _sentAny;
         double _lastKeyframeAt;
         string _recordingUuid;
 
         internal IReadOnlyDictionary<string, object> Sent => _sent;
 
-        public void RequestKeyframe() {
+        public void RequestKeyframe(bool includeEmpty = false) {
             _keyframeDue = true;
+            _includeEmptyKeyframe |= includeEmpty;
         }
 
         /// <summary>
@@ -44,10 +46,11 @@ namespace TestingFloorSdk.Internal {
             if (keyframe) {
                 // Before anything is known there is nothing for a keyframe to
                 // reset, so an empty session-start keyframe is skipped.
-                if (current.Count > 0 || _sentAny) {
+                if (current.Count > 0 || _sentAny || _includeEmptyKeyframe) {
                     record = TelemetryQueue.RentProperties();
                     foreach (var kvp in current) record[kvp.Key] = kvp.Value;
                     _keyframeDue = false;
+                    _includeEmptyKeyframe = false;
                     _lastKeyframeAt = now;
                 }
             }

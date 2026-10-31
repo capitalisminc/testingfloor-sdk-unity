@@ -42,6 +42,21 @@ namespace TestingFloorSdk {
         static TelemetryState _state;
         static bool _quittingHandlerRegistered;
         static string _playSessionId;
+        static bool _manageRecording;
+        static bool _refreshingRecording;
+        static bool _endingPlay;
+        static long _nextRecordingPollAt;
+        static bool? s_editorForTesting;
+        static bool? s_automationForTesting;
+        static string _collectionReason;
+        static TestingFloorRecording _lastRecordingNotification;
+
+        /// <summary>Active recording changes, including null on detach or suspension. Runs before attachment keyframes.</summary>
+        public static event Action<TestingFloorRecording> RecordingChanged;
+#if UNITY_EDITOR
+        static readonly string EditorObserverSession = Guid.NewGuid().ToString();
+        static long _nextEditorObservationAt;
+#endif
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         static void ResetStatics() {
@@ -77,6 +92,15 @@ namespace TestingFloorSdk {
             // startup), so resetting here is what makes Play stop+restart
             // produce a fresh $session_id.
             _playSessionId = null;
+            _manageRecording = false;
+            _refreshingRecording = false;
+            _endingPlay = false;
+            _nextRecordingPollAt = 0;
+            _collectionReason = null;
+            _lastRecordingNotification = null;
+            RecordingChanged = null;
+            s_editorForTesting = null;
+            s_automationForTesting = null;
         }
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
@@ -98,6 +122,23 @@ namespace TestingFloorSdk {
         static void RegisterEditorPlayModeHook() {
             EditorApplication.playModeStateChanged -= OnEditorPlayModeStateChanged;
             EditorApplication.playModeStateChanged += OnEditorPlayModeStateChanged;
+            EditorApplication.update -= OnEditorUpdate;
+            EditorApplication.update += OnEditorUpdate;
+        }
+
+        static void OnEditorUpdate() {
+            if (TestingFloorSettings.IsAutomation) return;
+            if (EditorApplication.isPlaying) {
+                if (_initialized) RefreshRecordingContext();
+                return;
+            }
+            var now = RecordingTelemetry.Clock();
+            if (EditorApplication.isPlayingOrWillChangePlaymode || now < _nextEditorObservationAt) return;
+            _nextEditorObservationAt = now + 250;
+            var candidate = TestingFloorRecording.Discover();
+            if (candidate != null && candidate.LeaseActive(now) && !RecordingTelemetry.IsClosed(candidate)) {
+                RecordingTelemetry.WriteStatus(candidate, EditorObserverSession, "waiting", "waiting_for_play");
+            }
         }
 
         static void OnEditorPlayModeStateChanged(PlayModeStateChange state) {
@@ -114,13 +155,13 @@ namespace TestingFloorSdk {
 
         public static Task FlushAsync(TimeSpan timeout) {
             EnsureInitialized();
-            if (_state == TelemetryState.Disabled) return Task.CompletedTask;
+            if (_settings == null) return Task.CompletedTask;
             return TelemetryQueue.FlushAsync(timeout, GetClient, ApplySendResult, _settings);
         }
 
         public static void SetForceDisabled(bool disabled) {
             _forceDisabled = disabled;
-            _initialized = false;
+            RefreshRecordingContext(force: true);
         }
 
         /// <summary>
@@ -185,8 +226,10 @@ namespace TestingFloorSdk {
         }
 
         static TrackedObject Register(string kind, Transform transform, Func<Vector3?> position, string id) {
-            if (!IsCollecting) return new TrackedObject(null, kind, id);
+            EnsureInitialized();
+            if (_forceDisabled || (_manageRecording && _collectionReason != null && _collectionReason != "editor_policy_disabled")) return new TrackedObject(null, kind, id);
             ConfigureObjects();
+            _objects.ObserveOnMutation = IsCollecting;
             return new TrackedObject(_objects.Register(kind, transform, position, id), kind, id);
         }
 
@@ -349,12 +392,16 @@ namespace TestingFloorSdk {
             }
         }
 
-        internal static bool IsCollecting {
+        /// <summary>The effective collection state, including the current editor recording policy.</summary>
+        public static bool IsCollecting {
             get {
                 EnsureInitialized();
                 return _state == TelemetryState.Ok || _state == TelemetryState.NetworkDown;
             }
         }
+
+        /// <summary>A machine-readable reason when collection is inactive, or null when collecting.</summary>
+        public static string CollectionReason { get { EnsureInitialized(); return _collectionReason; } }
 
         internal static bool TrackEventInternal(string eventType, Dictionary<string, object> eventProperties) {
             if (!IsCollecting) {
@@ -371,6 +418,7 @@ namespace TestingFloorSdk {
             // check finishes first, and the next poll closes the recording.
             if (s_bufferingDepth == 0) {
                 RecordingTelemetry.Poll();
+                if (!IsCollecting) { TelemetryQueue.ReturnProperties(eventProperties); return false; }
                 // A state change is queued before the event it applies to.
                 PollState(Time.unscaledTimeAsDouble);
             }
@@ -604,45 +652,131 @@ namespace TestingFloorSdk {
         }
 
         static void EnsureInitialized() {
-            if (_initialized) return;
-
-            if (_forceDisabled || TestingFloorSettings.IsAutomation) {
-                _client = null;
-                _state = TelemetryState.Disabled;
+            if (!_initialized) {
+                _settings = TestingFloorSettings.Current;
                 _initialized = true;
+                _manageRecording = true;
+            }
+            RefreshRecordingContext();
+        }
+
+        internal static void RefreshRecordingContext(bool force = false) {
+            if (!_manageRecording || _refreshingRecording || _endingPlay || RecordingTelemetry.Closing || s_bufferingDepth > 0) return;
+            _refreshingRecording = true;
+            try {
+                RecordingTelemetry.Poll();
+                var now = RecordingTelemetry.Clock();
+                var active = TestingFloorRecording.Attached;
+                if (force || now >= _nextRecordingPollAt || (active != null && active.HasLease && !active.LeaseActive(now))) {
+                    _nextRecordingPollAt = now + 250;
+                    var candidate = TestingFloorRecording.Discover();
+                    if (active != null && !active.Closed && candidate != null &&
+                        (!string.Equals(active.RecordingUuid, candidate.RecordingUuid, StringComparison.Ordinal) ||
+                         !string.Equals(active.TelemetryDirectory, candidate.TelemetryDirectory, StringComparison.Ordinal))) {
+                        RecordingTelemetry.Finish("recording_replaced", interrupted: !RecordingTelemetry.IsClosed(active));
+                        active = null;
+                    }
+                    if (candidate != null && !RecordingTelemetry.IsCompleted(candidate, PlaySessionId)) {
+                        if (active != null && !active.Closed && active.RecordingUuid == candidate.RecordingUuid) {
+                            active.RefreshLease(candidate);
+                            candidate = active;
+                        }
+                        var reason = CollectionBlockReason(candidate.HasLease && candidate.LeaseActive(now));
+                        if (reason == null || reason == "editor_policy_disabled") {
+                            if (candidate.LeaseVersion != 0 && (!candidate.TelemetryRequested || !candidate.HasLease)) reason = "editor_policy_disabled";
+                            if (candidate.HasLease && !candidate.LeaseActive(now)) reason = "lease_expired";
+                        }
+                        if (RecordingTelemetry.IsClosed(candidate)) reason = "recording_closed";
+                        if (reason == null) {
+                            var resumed = candidate.Suspended;
+                            var attached = ReferenceEquals(candidate, active) && !candidate.Closed;
+                            if (!attached) {
+                                if (string.IsNullOrWhiteSpace(candidate.TelemetryDirectory) && !candidate.HasLease) {
+                                    RecordingTelemetry.RegisterLegacy(candidate, PlaySessionId, EnqueueRecordingCompletion, () => SendBufferedRecords(shuttingDown: false));
+                                    attached = true;
+                                }
+                                else attached = RegisterRecording(candidate);
+                            }
+                            if (attached && !candidate.Closed) {
+                                candidate.Suspended = false;
+                                UpdateCollectionState();
+                                NotifyRecordingChanged();
+                                if (!ReferenceEquals(active, candidate) || resumed) {
+                                    _stateTracker.RequestKeyframe(includeEmpty: true);
+                                    _objects.RequestKeyframe();
+                                    MovementDriver.RequestReset();
+                                    SendBufferedRecords(shuttingDown: false);
+                                }
+                                RecordingTelemetry.WriteStatus(candidate, PlaySessionId,
+                                    _collectionReason == null ? "attached" : "disabled", _collectionReason ?? "none");
+                            }
+                            else RecordingTelemetry.WriteStatus(candidate, PlaySessionId, "disabled", "registration_failed");
+                        }
+                        else {
+                            if (ReferenceEquals(active, candidate) && !candidate.Closed) RecordingTelemetry.Suspend(reason);
+                            RecordingTelemetry.WriteStatus(candidate, PlaySessionId,
+                                reason == "lease_expired" ? "suspended" : reason == "missing_configuration" ? "not_configured" : "disabled", reason);
+                        }
+                    }
+                    active = TestingFloorRecording.Attached;
+                    if (active != null && !active.Closed && active.HasLease && !active.LeaseActive(now)) RecordingTelemetry.Suspend("lease_expired");
+                }
+                UpdateCollectionState();
+            }
+            finally { _refreshingRecording = false; }
+        }
+
+        internal static void NotifyRecordingChanged() {
+            if (_manageRecording) UpdateCollectionState();
+            var attached = TestingFloorRecording.Attached;
+            var active = attached != null && !attached.Closed && !attached.Suspended ? attached : null;
+            if (ReferenceEquals(active, _lastRecordingNotification)) return;
+            _lastRecordingNotification = active;
+            var handlers = RecordingChanged;
+            if (handlers == null) return;
+            foreach (Action<TestingFloorRecording> handler in handlers.GetInvocationList()) {
+                try { handler(active); }
+                catch (Exception ex) {
+                    if (_settings != null && _settings.logErrors) Debug.LogWarning($"[TestingFloor] Recording change handler threw: {ex}");
+                }
+            }
+        }
+
+        static string CollectionBlockReason(bool activeRecording) {
+            if (_forceDisabled) return "force_disabled";
+            if (s_automationForTesting ?? TestingFloorSettings.IsAutomation) return "automation";
+            if (_settings == null || !_settings.enabled) return "master_disabled";
+            if (string.IsNullOrWhiteSpace(_settings.writeKey) || string.IsNullOrWhiteSpace(_settings.endpoint)) return "missing_configuration";
+            if ((s_editorForTesting ?? Application.isEditor) && !_settings.enableInEditor &&
+                !(_settings.enableInEditorWhileRecording && activeRecording)) return "editor_policy_disabled";
+            return null;
+        }
+
+        static void UpdateCollectionState() {
+            var active = TestingFloorRecording.Attached;
+            var recordingAllowed = active != null && !active.Closed && !active.Suspended && active.LeaseActive(RecordingTelemetry.Clock());
+            _collectionReason = CollectionBlockReason(recordingAllowed);
+            if (_collectionReason != null) {
+                _objects.ObserveOnMutation = false;
+                _state = _collectionReason == "missing_configuration" ? TelemetryState.NotConfigured : TelemetryState.Disabled;
                 return;
             }
+            if (_client == null && s_captureForTesting == null && s_senderForTesting == null) _client = new CollectorClient(_settings);
+            if (_state == TelemetryState.Disabled || _state == TelemetryState.NotConfigured) _state = TelemetryState.Ok;
+            _objects.ObserveOnMutation = _state == TelemetryState.Ok || _state == TelemetryState.NetworkDown;
+            if (_state == TelemetryState.Rejected) _collectionReason = "collector_rejected";
+        }
 
-            _settings = TestingFloorSettings.Current;
-            if (_settings == null || !_settings.enabled) {
-                _client = null;
-                _state = TelemetryState.Disabled;
-                _initialized = true;
-                return;
-            }
-
-            if (Application.isEditor && !_settings.enableInEditor) {
-                _client = null;
-                _state = TelemetryState.Disabled;
-                _initialized = true;
-                return;
-            }
-
-            if (!_settings.IsEnabledForBuild) {
-                _client = null;
-                _state = TelemetryState.NotConfigured;
-                _initialized = true;
-                return;
-            }
-
-            _client = new CollectorClient(_settings);
-            _state = TelemetryState.Ok;
-            _initialized = true;
-            if (RegisterRecording(TestingFloorRecording.Current)) {
-                var driver = new GameObject("[TestingFloor.RecordingTelemetry]");
-                UnityEngine.Object.DontDestroyOnLoad(driver);
-                driver.AddComponent<RecordingTelemetryDriver>();
-            }
+        internal static void ConfigureRecordingLifecycleForTesting(TestingFloorSettings settings, Func<TestingFloorRecording> discover, Func<long> clock, Func<TelemetryEvent, bool> capture, bool editor = true, bool automation = false) {
+            CaptureRecordsForTesting(capture, settings);
+            RecordingTelemetry.ResetStatics();
+            TestingFloorRecording.ResetStatics();
+            TestingFloorRecording.DiscoveryForTesting = discover;
+            RecordingTelemetry.Clock = clock;
+            s_editorForTesting = editor;
+            s_automationForTesting = automation;
+            _manageRecording = true;
+            RefreshRecordingContext(force: true);
         }
 
         static IBatchSender GetClient() => s_senderForTesting ?? _client;
@@ -662,7 +796,7 @@ namespace TestingFloorSdk {
         }
 
         internal static void EnqueueRecordingCompletion(TestingFloorRecording recording, string session) {
-            var marker = new TelemetryEvent("$tf_telemetry_complete", new Dictionary<string, object>(),
+            var marker = new TelemetryEvent("$tf_telemetry_complete", new Dictionary<string, object> { ["interrupted"] = recording.Interrupted },
                 ContextSnapshot.Create(_platformContext), Identity.DeviceId, Identity.ProfileId,
                 DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), session, recording, seq: _seq + 1);
             Enqueue(marker);
@@ -686,6 +820,7 @@ namespace TestingFloorSdk {
         }
 
         internal static void FinishRecordingAndFlush() {
+            _endingPlay = true;
             SendBufferedRecords(shuttingDown: true);
             RecordingTelemetry.Finish();
             TelemetryQueue.FlushBlocking(TimeSpan.FromSeconds(QuitFlushTimeoutSeconds), _client, _settings);

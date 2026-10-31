@@ -38,7 +38,7 @@ namespace TestingFloorSdk {
             set => id = value;
         }
 
-        /// <summary>The live handle, or null while the component is disabled or collection is off.</summary>
+        /// <summary>The registered handle, or null while disabled or blocked by a hard collection gate.</summary>
         public TrackedObject Handle => _handle != null && _handle.IsTracked ? _handle : null;
 
         void OnEnable() {
