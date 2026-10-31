@@ -14,6 +14,7 @@ namespace TestingFloorSdk {
 
         MovementSampler _sampler;
         Action<MovementEvent> _emit;
+        int _resetVersion;
 
         void Awake() {
             _emit = TrackMovementEvent;
@@ -26,6 +27,11 @@ namespace TestingFloorSdk {
         }
 
         void Update() {
+            if (!TestingFloor.IsCollecting) { _sampler.Reset(); return; }
+            if (_resetVersion != MovementDriver.ResetVersion) {
+                _resetVersion = MovementDriver.ResetVersion;
+                _sampler.Reset();
+            }
             ConfigureFromSettings();
             if (TeleportTracker.IsTeleporting) {
                 _sampler.Reset();

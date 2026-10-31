@@ -5,6 +5,7 @@ namespace TestingFloorSdk {
     public sealed class TestingFloorSettings : ScriptableObject {
         public bool enabled = true;
         public bool enableInEditor = false;
+        public bool enableInEditorWhileRecording = true;
         public bool logErrors = false;
         public bool logEventSends = false;
 
@@ -57,10 +58,13 @@ namespace TestingFloorSdk {
             }
         }
 
-        public bool IsEnabledForBuild => ShouldCollect(Application.isEditor, IsAutomation);
+        public bool IsEnabledForBuild => ShouldCollect(Application.isEditor, IsAutomation, TestingFloorRecording.Current?.HasLease == true);
 
-        internal bool ShouldCollect(bool editor, bool automation) => enabled && !automation
-            && (!editor || enableInEditor) && !string.IsNullOrWhiteSpace(writeKey) && !string.IsNullOrWhiteSpace(endpoint);
+        internal bool ShouldCollect(bool editor, bool automation, bool activeRecording = false) => enabled && CanDeliver(automation)
+            && (!editor || enableInEditor || (enableInEditorWhileRecording && activeRecording));
+
+        // Delivery drains accepted records after collection stops; editor policy gates producers.
+        internal bool CanDeliver(bool automation) => !automation && !string.IsNullOrWhiteSpace(writeKey) && !string.IsNullOrWhiteSpace(endpoint);
 
         internal static bool IsAutomation => IsAutomationArgs(System.Environment.GetCommandLineArgs());
 

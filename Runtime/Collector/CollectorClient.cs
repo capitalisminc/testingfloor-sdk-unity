@@ -30,6 +30,7 @@ namespace TestingFloorSdk.Internal {
 
     internal sealed class CollectorClient : IBlockingBatchSender {
         readonly TestingFloorSettings _settings;
+        readonly bool _automation;
         readonly JsonPayloadWriter _writer = new();
         bool _invalidWriteKey;
         bool _loggedInvalidWriteKey;
@@ -46,7 +47,10 @@ namespace TestingFloorSdk.Internal {
             internal BatchSendOutcome Outcome;
         }
 
-        public CollectorClient(TestingFloorSettings settings) { _settings = settings; }
+        public CollectorClient(TestingFloorSettings settings, bool? automation = null) {
+            _settings = settings;
+            _automation = automation ?? TestingFloorSettings.IsAutomation;
+        }
 
         PendingSend Begin(IReadOnlyList<TelemetryEvent> events, out BatchSendOutcome outcome) {
             outcome = new BatchSendOutcome(SendResult.Success, 0);
@@ -55,7 +59,7 @@ namespace TestingFloorSdk.Internal {
                 outcome = new BatchSendOutcome(SendResult.Rejected, events.Count, events.Count, CountRecording(events, events.Count));
                 return null;
             }
-            if (_settings == null || !_settings.IsEnabledForBuild || string.IsNullOrWhiteSpace(_settings.writeKey) || string.IsNullOrWhiteSpace(_settings.endpoint)) {
+            if (_settings == null || !_settings.CanDeliver(_automation)) {
                 outcome = new BatchSendOutcome(SendResult.NotConfigured, events.Count, events.Count, CountRecording(events, events.Count));
                 return null;
             }

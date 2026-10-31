@@ -75,6 +75,10 @@ namespace TestingFloorSdk {
             _invertedOverride = null;
         }
 
+        internal static void Refresh() {
+            if (Application.isPlaying && !TestingFloorSettings.IsAutomation) Apply();
+        }
+
         static void Apply() {
             if (EffectiveEnabled) {
                 EnsureOverlay();

@@ -121,6 +121,7 @@ namespace TestingFloorSdk.Internal {
 
         internal int MaxLiveObjects = DefaultMaxLiveObjects;
         internal bool LogErrors;
+        internal bool ObserveOnMutation = true;
 
         internal int LiveCount => _live.Count;
         internal int RetryCount => _retries.Count;
@@ -174,7 +175,7 @@ namespace TestingFloorSdk.Internal {
             id ??= NextId(kind);
 
             var entry = new Entry(this, id, kind, transform, source);
-            entry.Pending = entry.Read(out _, out _);
+            entry.Pending = ObserveOnMutation ? entry.Read(out _, out _) : null;
             if (entry.Pending.HasValue) {
                 entry.HasObserved = true;
                 entry.LastObserved = entry.Pending.Value;
@@ -195,7 +196,8 @@ namespace TestingFloorSdk.Internal {
         public void Remove(Entry entry, string reason) {
             if (entry == null || !entry.Live) return;
             Detach(entry);
-            var final = entry.Read(out _, out _);
+            if (!ObserveOnMutation && !entry.HasSent) return;
+            var final = ObserveOnMutation ? entry.Read(out _, out _) : null;
             if (!final.HasValue && entry.HasObserved) final = entry.LastObserved;
             reason = string.IsNullOrWhiteSpace(reason) ? ReasonRemoved : reason.Trim();
             _removals.Add(new Removal(entry, reason, final));

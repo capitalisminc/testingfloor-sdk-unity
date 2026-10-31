@@ -3,8 +3,8 @@ using TestingFloorSdk.Internal;
 namespace TestingFloorSdk {
     /// <summary>
     /// A handle to an object registered with <see cref="TestingFloor.TrackObject(string, UnityEngine.Transform, string)"/>.
-    /// When collection is disabled, or the live-object cap is reached, the
-    /// handle does nothing.
+    /// Registrations remain available while collection is dormant; sampling
+    /// begins when the collection policy permits it. Handles beyond the live-object cap do nothing.
     /// </summary>
     public sealed class TrackedObject {
         readonly ObjectTracker.Entry _entry;
@@ -20,7 +20,7 @@ namespace TestingFloorSdk {
 
         public string Kind { get; }
 
-        /// <summary>Whether the SDK is sampling this object.</summary>
+        /// <summary>Whether the object is registered and has not been removed.</summary>
         public bool IsTracked => _entry != null && _entry.Live;
 
         /// <summary>Sets a state value. Only changed values are sent. A value named <c>label</c> becomes the display name.</summary>
