@@ -27,7 +27,8 @@ namespace TestingFloorSdk {
 
         internal bool HasLease => LeaseVersion == 1 && TelemetryRequested &&
             LeaseExpiresAtUnixMs > 0 && !string.IsNullOrWhiteSpace(TelemetryDirectory);
-        internal bool LeaseActive(long now) => HasLease && LeaseExpiresAtUnixMs > now && LeaseExpiresAtUnixMs <= now + 30000;
+        internal bool LeaseFresh(long now) => LeaseVersion == 1 && LeaseExpiresAtUnixMs > now && LeaseExpiresAtUnixMs <= now + 30000;
+        internal bool LeaseActive(long now) => HasLease && LeaseFresh(now);
 
         internal void RefreshLease(TestingFloorRecording candidate) {
             LeaseVersion = candidate.LeaseVersion;
@@ -47,11 +48,13 @@ namespace TestingFloorSdk {
         const int MaxPayloadAgeHours = 12;
 
         static TestingFloorRecording _current;
+        static TestingFloorRecording _observed;
         internal static Func<TestingFloorRecording> DiscoveryForTesting;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         internal static void ResetStatics() {
             _current = null;
+            _observed = null;
             DiscoveryForTesting = null;
         }
 
@@ -64,6 +67,7 @@ namespace TestingFloorSdk {
 
         internal static TestingFloorRecording Attached => _current;
         internal static void SetActive(TestingFloorRecording recording) => _current = recording;
+        internal static void Observe(TestingFloorRecording recording) => _observed = recording;
 
         internal static TestingFloorRecording Discover() {
             if (DiscoveryForTesting != null) return DiscoveryForTesting();
@@ -78,10 +82,21 @@ namespace TestingFloorSdk {
 
         internal static void UseForTesting(TestingFloorRecording recording) {
             _current = recording;
+            _observed = recording;
         }
 
-        internal static bool HasRecorderSession => Current != null;
-        internal static bool SuppressesQr => Current != null && Current.SuppressQr;
+        internal static bool HasRecorderSession => CurrentRecorderHandoff != null;
+        internal static bool SuppressesQr => CurrentRecorderHandoff?.SuppressQr == true;
+
+        static TestingFloorRecording CurrentRecorderHandoff {
+            get {
+                TestingFloor.RefreshRecordingContext();
+                var candidate = _observed ?? _current;
+                if (candidate == null || candidate.Closed || RecordingTelemetry.IsClosed(candidate)) return null;
+                if (candidate.LeaseVersion != 0 && !candidate.LeaseFresh(RecordingTelemetry.Clock())) return null;
+                return candidate;
+            }
+        }
 
         static TestingFloorRecording ResolveFromArgs() {
             var args = Environment.GetCommandLineArgs();
@@ -142,8 +157,12 @@ namespace TestingFloorSdk {
                 return null;
             }
 
-            if (payload.created_at_unix_ms > 0) {
-                var ageMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() - payload.created_at_unix_ms;
+            var now = RecordingTelemetry.Clock();
+            var freshLease = payload.lease_version == 1 && payload.telemetry_requested &&
+                !string.IsNullOrWhiteSpace(payload.telemetry_directory) &&
+                payload.lease_expires_at_unix_ms > now && payload.lease_expires_at_unix_ms <= now + 30000;
+            if (payload.created_at_unix_ms > 0 && !freshLease) {
+                var ageMs = now - payload.created_at_unix_ms;
                 if (ageMs > TimeSpan.FromHours(MaxPayloadAgeHours).TotalMilliseconds) {
                     // Stale payload — recorder probably crashed or moved on.
                     // Don't link Play events to a recording that's no longer

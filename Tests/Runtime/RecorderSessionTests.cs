@@ -30,6 +30,27 @@ namespace TestingFloorSdk.Tests {
         }
 
         [Test]
+        public void FreshRenewableLeaseRemainsValidAfterTheLegacyPayloadAgeLimit() {
+            var originalClock = Internal.RecordingTelemetry.Clock;
+            const long now = 1800000000000;
+            Internal.RecordingTelemetry.Clock = () => now;
+            try {
+                string Payload(int version, bool requested, long expires) =>
+                    "{\"recording_uuid\":\"example-recording\",\"telemetry_directory\":\"example-directory\",\"created_at_unix_ms\":" +
+                    (now - (long)TimeSpan.FromHours(13).TotalMilliseconds) + ",\"lease_version\":" + version +
+                    ",\"telemetry_requested\":" + (requested ? "true" : "false") + ",\"lease_expires_at_unix_ms\":" + expires + "}";
+                var fresh = TestingFloorRecording.ParsePayloadForTesting(Payload(1, true, now + 5000));
+                Assert.NotNull(fresh, "The app preserves created_at while renewing a live recording lease");
+                Assert.IsTrue(fresh.LeaseActive(now));
+                Assert.IsNull(TestingFloorRecording.ParsePayloadForTesting(Payload(1, true, now - 1)));
+                Assert.IsNull(TestingFloorRecording.ParsePayloadForTesting(Payload(2, true, now + 5000)));
+                Assert.IsNull(TestingFloorRecording.ParsePayloadForTesting(Payload(1, false, now + 5000)));
+                Assert.IsNull(TestingFloorRecording.ParsePayloadForTesting(Payload(0, false, 0)));
+            }
+            finally { Internal.RecordingTelemetry.Clock = originalClock; }
+        }
+
+        [Test]
         public void AutomationAlwaysWinsOverForcedQr() {
             var settings = ScriptableObject.CreateInstance<TestingFloorSettings>();
             try {

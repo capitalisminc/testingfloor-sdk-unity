@@ -211,7 +211,10 @@ the SDK retains handles without sampling them until collection becomes active.
 Recording-only collection requires an active desktop app lease. The additive
 handoff fields are `lease_version: 1`, `telemetry_requested: true`, and
 `lease_expires_at_unix_ms`, alongside `recording_uuid` and `telemetry_directory`.
-The app renews the lease while recording. An expired lease suspends association;
+The app renews the lease while recording; a fresh lease remains valid even when
+the original recording was created more than twelve hours earlier. The legacy
+age limit still applies to static, expired and unsupported handoffs.
+An expired lease suspends association;
 renewal sends new keyframes and retains an interruption flag. A closed recording
 cannot reopen in the same Play run. Static legacy handoffs retain their existing
 behavior when ordinary editor collection is enabled, but do not override editor-off
@@ -219,7 +222,8 @@ policy. Do not construct handoffs manually for normal desktop app use.
 
 The SDK registers `<run UUID>.session` before admitting recording events and writes
 `<run UUID>.status.json` with attachment state, reason, capabilities and freshness.
-Local attachment is not a warehouse delivery acknowledgement. Completion markers
+Recorder QR suppression follows the valid recording handoff even when telemetry
+is disabled. Local attachment is not a warehouse delivery acknowledgement. Completion markers
 are ordered behind accepted data and report drop counts and interruptions for that
 recording alone. Accepted batches can finish uploading after recording stops.
 

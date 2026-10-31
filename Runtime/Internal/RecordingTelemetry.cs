@@ -15,6 +15,7 @@ namespace TestingFloorSdk.Internal {
         static long _lastStatusAt;
 
         internal static Func<long> Clock = () => DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        internal static Action<TestingFloorRecording> AfterRegistrationForTesting;
         internal static bool Closing => _closing;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
@@ -28,6 +29,7 @@ namespace TestingFloorSdk.Internal {
             _lastStatus = null;
             _lastStatusAt = 0;
             Clock = () => DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            AfterRegistrationForTesting = null;
         }
 
         internal static bool IsCompleted(TestingFloorRecording recording, string session) =>
@@ -42,6 +44,7 @@ namespace TestingFloorSdk.Internal {
                 if (IsClosed(recording) || !Directory.Exists(recording.TelemetryDirectory)) { recording.Closed = true; return false; }
                 File.WriteAllText(Path.Combine(recording.TelemetryDirectory, session + ".session"), "");
                 SetRecording(recording, session, onComplete, beforeClose);
+                AfterRegistrationForTesting?.Invoke(recording);
                 Poll();
                 return !recording.Closed;
             } catch (IOException) { recording.Closed = true; return false; }

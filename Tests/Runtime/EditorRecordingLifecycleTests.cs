@@ -35,6 +35,17 @@ namespace TestingFloorSdk.Tests {
             UnityEngine.Object.DestroyImmediate(_settings);
         }
 
+        sealed class Delivery : IBlockingBatchSender {
+            public readonly List<string> Names = new();
+            BatchSendOutcome Accept(IReadOnlyList<TelemetryEvent> records) {
+                foreach (var record in records) Names.Add(record.EventType);
+                return new BatchSendOutcome(SendResult.Success, records.Count);
+            }
+            public ValueTask<BatchSendOutcome> TrackBatchAsync(IReadOnlyList<TelemetryEvent> records) => new(Accept(records));
+            public BatchSendOutcome TrackBatchBlocking(IReadOnlyList<TelemetryEvent> records, DateTime deadline) => Accept(records);
+            public BatchSendOutcome CompletePendingBlocking(DateTime deadline) => new(SendResult.Success, 0);
+        }
+
         TestingFloorRecording Lease(string uuid) {
             var directory = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
             Directory.CreateDirectory(directory);
@@ -172,6 +183,45 @@ namespace TestingFloorSdk.Tests {
             var automation = new CollectorClient(_settings, automation: true);
             outcome = await automation.TrackBatchAsync(new[] { record });
             Assert.AreEqual(SendResult.NotConfigured, outcome.Result, "Automation remains unable to send");
+        }
+
+        [Test]
+        public void StopRacingFirstRegistrationCanDeliverItsCompletionWithoutEnablingGameplay() {
+            var delivery = new Delivery();
+            TestingFloor.ConfigureRecordingLifecycleForTesting(_settings, () => _candidate, () => _now, capture: null, delivery: delivery);
+            RecordingTelemetry.AfterRegistrationForTesting = recording => {
+                Assert.IsFalse(TestingFloor.IsCollecting, "Delivery initialization must not grant collection before registration finishes");
+                File.WriteAllText(Path.Combine(recording.TelemetryDirectory, "closed.json"), _now.ToString());
+            };
+            _candidate = Lease("example-recording");
+            Poll();
+            Assert.IsTrue(File.Exists(Path.Combine(_candidate.TelemetryDirectory, TestingFloor.PlaySessionId + ".session")));
+            CollectionAssert.AreEqual(new[] { "$tf_telemetry_complete" }, delivery.Names);
+            Assert.AreEqual(0, TelemetryQueue.PendingEventCount);
+            Assert.IsFalse(TestingFloor.IsCollecting);
+            StringAssert.Contains("\"state\":\"closed\"", File.ReadAllText(Path.Combine(_candidate.TelemetryDirectory, TestingFloor.PlaySessionId + ".status.json")));
+        }
+
+        [TestCase("master_disabled")]
+        [TestCase("missing_configuration")]
+        [TestCase("editor_policy_disabled")]
+        public void RecorderQrSuppressionRemainsIndependentOfTelemetryPermission(string reason) {
+            _settings.qrHeartbeatsEnabled = true;
+            if (reason == "master_disabled") _settings.enabled = false;
+            if (reason == "missing_configuration") _settings.writeKey = "";
+            if (reason == "editor_policy_disabled") _settings.enableInEditorWhileRecording = false;
+            _candidate = Lease("example-recording");
+            Poll();
+            Assert.IsFalse(TestingFloor.IsCollecting);
+            Assert.IsNull(TestingFloor.Recording);
+            Assert.IsTrue(TestingFloorRecording.SuppressesQr);
+            Assert.IsFalse(QrHeartbeatDriver.EffectiveEnabledFor(_settings, TestingFloorRecording.SuppressesQr, false));
+            Assert.IsTrue(QrHeartbeatDriver.EffectiveEnabledFor(_settings, TestingFloorRecording.SuppressesQr, true), "An explicit QR override still wins");
+            Assert.IsFalse(File.Exists(Path.Combine(_candidate.TelemetryDirectory, TestingFloor.PlaySessionId + ".session")));
+            File.WriteAllText(Path.Combine(_candidate.TelemetryDirectory, "closed.json"), _now.ToString());
+            Poll();
+            Assert.IsFalse(TestingFloorRecording.SuppressesQr);
+            Assert.IsTrue(QrHeartbeatDriver.EffectiveEnabledFor(_settings, TestingFloorRecording.SuppressesQr, false));
         }
 
         [Test]

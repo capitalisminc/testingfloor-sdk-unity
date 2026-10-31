@@ -16,7 +16,8 @@ namespace TestingFloorSdk {
         const string LevelKeyPrefix = "game_level.";
 
         static TestingFloorSettings _settings;
-        static CollectorClient _client;
+        static IBlockingBatchSender _client;
+        static Func<TestingFloorSettings, IBlockingBatchSender> s_clientFactoryForTesting;
         static ITelemetryContextProvider _contextProvider;
         static ITelemetryContextProvider _stateProvider;
         static Dictionary<string, object> _directState = new(StringComparer.Ordinal);
@@ -62,6 +63,7 @@ namespace TestingFloorSdk {
         static void ResetStatics() {
             _settings = null;
             _client = null;
+            s_clientFactoryForTesting = null;
             _contextProvider = null;
             _stateProvider = null;
             _directState = new Dictionary<string, object>(StringComparer.Ordinal);
@@ -670,6 +672,7 @@ namespace TestingFloorSdk {
                 if (force || now >= _nextRecordingPollAt || (active != null && active.HasLease && !active.LeaseActive(now))) {
                     _nextRecordingPollAt = now + 250;
                     var candidate = TestingFloorRecording.Discover();
+                    TestingFloorRecording.Observe(candidate);
                     if (active != null && !active.Closed && candidate != null &&
                         (!string.Equals(active.RecordingUuid, candidate.RecordingUuid, StringComparison.Ordinal) ||
                          !string.Equals(active.TelemetryDirectory, candidate.TelemetryDirectory, StringComparison.Ordinal))) {
@@ -691,6 +694,9 @@ namespace TestingFloorSdk {
                             var resumed = candidate.Suspended;
                             var attached = ReferenceEquals(candidate, active) && !candidate.Closed;
                             if (!attached) {
+                                // A closure recheck may synchronously queue a marker, before collection
+                                // can be enabled. Delivery must already be available for that marker.
+                                EnsureDeliveryClient();
                                 if (string.IsNullOrWhiteSpace(candidate.TelemetryDirectory) && !candidate.HasLease) {
                                     RecordingTelemetry.RegisterLegacy(candidate, PlaySessionId, EnqueueRecordingCompletion, () => SendBufferedRecords(shuttingDown: false));
                                     attached = true;
@@ -710,7 +716,9 @@ namespace TestingFloorSdk {
                                 RecordingTelemetry.WriteStatus(candidate, PlaySessionId,
                                     _collectionReason == null ? "attached" : "disabled", _collectionReason ?? "none");
                             }
-                            else RecordingTelemetry.WriteStatus(candidate, PlaySessionId, "disabled", "registration_failed");
+                            else RecordingTelemetry.WriteStatus(candidate, PlaySessionId,
+                                RecordingTelemetry.IsClosed(candidate) ? "closed" : "disabled",
+                                RecordingTelemetry.IsClosed(candidate) ? "recording_closed" : "registration_failed");
                         }
                         else {
                             if (ReferenceEquals(active, candidate) && !candidate.Closed) RecordingTelemetry.Suspend(reason);
@@ -720,6 +728,7 @@ namespace TestingFloorSdk {
                     }
                     active = TestingFloorRecording.Attached;
                     if (active != null && !active.Closed && active.HasLease && !active.LeaseActive(now)) RecordingTelemetry.Suspend("lease_expired");
+                    QrHeartbeatDriver.Refresh();
                 }
                 UpdateCollectionState();
             }
@@ -761,13 +770,18 @@ namespace TestingFloorSdk {
                 _state = _collectionReason == "missing_configuration" ? TelemetryState.NotConfigured : TelemetryState.Disabled;
                 return;
             }
-            if (_client == null && s_captureForTesting == null && s_senderForTesting == null) _client = new CollectorClient(_settings);
+            EnsureDeliveryClient();
             if (_state == TelemetryState.Disabled || _state == TelemetryState.NotConfigured) _state = TelemetryState.Ok;
             _objects.ObserveOnMutation = _state == TelemetryState.Ok || _state == TelemetryState.NetworkDown;
             if (_state == TelemetryState.Rejected) _collectionReason = "collector_rejected";
         }
 
-        internal static void ConfigureRecordingLifecycleForTesting(TestingFloorSettings settings, Func<TestingFloorRecording> discover, Func<long> clock, Func<TelemetryEvent, bool> capture, bool editor = true, bool automation = false) {
+        static void EnsureDeliveryClient() {
+            if (_client != null || s_captureForTesting != null || s_senderForTesting != null) return;
+            _client = s_clientFactoryForTesting != null ? s_clientFactoryForTesting(_settings) : new CollectorClient(_settings);
+        }
+
+        internal static void ConfigureRecordingLifecycleForTesting(TestingFloorSettings settings, Func<TestingFloorRecording> discover, Func<long> clock, Func<TelemetryEvent, bool> capture, bool editor = true, bool automation = false, IBlockingBatchSender delivery = null) {
             CaptureRecordsForTesting(capture, settings);
             RecordingTelemetry.ResetStatics();
             TestingFloorRecording.ResetStatics();
@@ -776,6 +790,7 @@ namespace TestingFloorSdk {
             s_editorForTesting = editor;
             s_automationForTesting = automation;
             _manageRecording = true;
+            if (delivery != null) s_clientFactoryForTesting = _ => delivery;
             RefreshRecordingContext(force: true);
         }
 
