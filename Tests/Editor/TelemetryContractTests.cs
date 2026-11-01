@@ -158,11 +158,18 @@ namespace TestingFloorSdk.Tests.Editor {
         [Test]
         public void PoseAndSessionStateKeysAreTheContractsSdkProperties() {
             UseExampleSources();
+            TestingFloor.SetCameraFocusSource(() => new Vector3(7f, 0f, 8f));
             TestingFloor.Track("example_event").Send();
+            var camera = _camera.GetComponent<Camera>();
+            camera.orthographic = true;
+            camera.aspect = 2f;
+            TestingFloor.Track("example_orthographic_event").Send();
 
             var state = Wire(First(TestingFloor.StateRecordName));
-            var stateKeys = Properties(state);
-            var poseKeys = Properties(Wire(First("example_event")));
+            var stateKeys = _records.Where(record => record.EventType == TestingFloor.StateRecordName)
+                .SelectMany(record => Properties(Wire(record))).Distinct().ToArray();
+            var poseKeys = Properties(Wire(First("example_event")))
+                .Union(Properties(Wire(First("example_orthographic_event")))).ToArray();
             var rows = TelemetryContract.Rows("conventional_properties",
                 row => TelemetryContract.Text(row, "set_by") == "sdk" && !row.ContainsKey("event"));
 
@@ -170,12 +177,33 @@ namespace TestingFloorSdk.Tests.Editor {
             CollectionAssert.AreEquivalent(TelemetryContract.Keys(rows), stateKeys.Concat(poseKeys));
             AssertDeclaredProperties(state);
             AssertDeclaredProperties(Wire(First("example_event")));
+            AssertDeclaredProperties(Wire(First("example_orthographic_event")));
+        }
+
+        [Test]
+        public void OrthographicCameraSendsItsViewWidthInsteadOfAFieldOfView() {
+            UseExampleSources();
+            var camera = _camera.GetComponent<Camera>();
+            camera.orthographic = true;
+            camera.orthographicSize = 5f;
+            camera.aspect = 2f;
+            TestingFloor.SetCameraFocusSource(() => new Vector3(7f, 0f, 8f));
+            TestingFloor.Track("example_event").Send();
+
+            var state = Wire(First(TestingFloor.StateRecordName));
+            var wire = Wire(First("example_event"));
+            Assert.AreEqual("orthographic", state["camera.projection"]);
+            Assert.IsFalse(state.ContainsKey("camera.fov_axis"), "Only a perspective camera has a FOV axis");
+            Assert.AreEqual(20.0, Convert.ToDouble(wire["camera.ortho_width"]), 1e-4, "Width is twice the orthographic size times the aspect");
+            Assert.IsFalse(wire.ContainsKey("camera.fov"), "An orthographic camera ignores its field of view");
+            Assert.AreEqual(7.0, Convert.ToDouble(wire["camera.focus.x"]), 1e-4);
+            Assert.AreEqual(8.0, Convert.ToDouble(wire["camera.focus.z"]), 1e-4);
         }
 
         [Test]
         public void SdkEventsAndTheirPropertiesAreTheContracts() {
             UseExampleSources();
-            MovementTracker.TrackMovementEvent(new MovementEvent("ping", distance: 1f, duration: 2f, rotationDegrees: 3f, fovDelta: 4f, cameraDistance: 5f));
+            MovementTracker.TrackMovementEvent(new MovementEvent("ping", distance: 1f, duration: 2f, rotationDegrees: 3f, fovDelta: 4f, cameraDistance: 5f, orthoWidthDelta: 6f));
             TestingFloor.RecordTeleport(Vector3.zero, new Vector3(3f, 0f, 4f), "example_reason", 0.5);
             TestingFloor.Track("example_event").Send();
 

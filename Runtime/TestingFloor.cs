@@ -41,6 +41,7 @@ namespace TestingFloorSdk {
         static int s_bufferingDepth;
         static Func<Vector3?> _positionSource;
         static Func<Camera> _cameraSource;
+        static Func<Vector3?> _cameraFocusSource;
         static PlatformContext _platformContext;
         static bool _platformContextCaptured;
         static bool _initialized;
@@ -90,6 +91,7 @@ namespace TestingFloorSdk {
             s_bufferingDepth = 0;
             _positionSource = null;
             _cameraSource = null;
+            _cameraFocusSource = null;
             _platformContext = default;
             _platformContextCaptured = false;
             _initialized = false;
@@ -290,6 +292,27 @@ namespace TestingFloorSdk {
             MovementDriver.Apply();
         }
 
+        /// <summary>
+        /// The point at the center of the camera's view, such as the pivot a
+        /// strategy or sim camera orbits. Testing Floor centers the camera's
+        /// view on the map there. Return null when there is none.
+        /// </summary>
+        public static void SetCameraFocusSource(Func<Vector3?> source) {
+            _cameraFocusSource = source;
+        }
+
+        public static void SetCameraFocusSource(Transform transform) {
+            if (transform == null) {
+                ClearCameraFocusSource();
+                return;
+            }
+            _cameraFocusSource = () => transform != null ? transform.position : (Vector3?)null;
+        }
+
+        public static void ClearCameraFocusSource() {
+            _cameraFocusSource = null;
+        }
+
         public static void SetMovementTrackingEnabled(bool enabled) {
             MovementDriver.SetEnabledOverride(enabled);
         }
@@ -329,6 +352,20 @@ namespace TestingFloorSdk {
             catch (Exception ex) {
                 if (_settings != null && _settings.logErrors) {
                     Debug.LogWarning($"[TestingFloor] Camera source threw: {ex}");
+                }
+                return null;
+            }
+        }
+
+        internal static Vector3? GetCameraFocus() {
+            var src = _cameraFocusSource;
+            if (src == null) return null;
+            try {
+                return src();
+            }
+            catch (Exception ex) {
+                if (_settings != null && _settings.logErrors) {
+                    Debug.LogWarning($"[TestingFloor] Camera focus source threw: {ex}");
                 }
                 return null;
             }

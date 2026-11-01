@@ -17,6 +17,8 @@ namespace TestingFloorSdk.Tests {
                 MinStepFovDegrees = 0.05f,
                 MinPingCameraDistance = 0.5f,
                 MinStepCameraDistance = 0.005f,
+                MinPingOrthoWidth = 0.5f,
+                MinStepOrthoWidth = 0.005f,
             };
         }
 
@@ -191,6 +193,24 @@ namespace TestingFloorSdk.Tests {
 
             s.Step(0.5f, FovSample(30f), rec);
             Assert.Contains(MovementReasons.Stop, Reasons(emitted));
+        }
+
+        [Test]
+        public void OrthographicZoomAloneIsMovementMeasuredInViewWidth() {
+            var s = MakeSampler();
+            var emitted = new List<MovementEvent>();
+            var rec = Recorder(emitted);
+            // Only the view width changes: 1 m, 1 m, then 2 m.
+            s.Step(0f, new ActivitySample(cameraOrthoWidth: 20f), rec);
+            s.Step(0.1f, new ActivitySample(cameraOrthoWidth: 21f), rec);
+            s.Step(0.2f, new ActivitySample(cameraOrthoWidth: 22f), rec);
+            s.Step(0.8f, new ActivitySample(cameraOrthoWidth: 24f), rec);
+            s.Step(1.1f, new ActivitySample(cameraOrthoWidth: 24f), rec);
+
+            CollectionAssert.AreEqual(new[] { MovementReasons.Start, MovementReasons.Ping, MovementReasons.Stop }, Reasons(emitted));
+            Assert.AreEqual(2f, emitted[1].OrthoWidthDelta, 1e-4f, "The ping covers the zoom since start");
+            Assert.AreEqual(4f, emitted[2].OrthoWidthDelta, 1e-4f, "The stop covers the whole run");
+            Assert.AreEqual(0f, emitted[1].FovDelta, "Zooming an orthographic camera is not a FOV change");
         }
 
         [Test]
