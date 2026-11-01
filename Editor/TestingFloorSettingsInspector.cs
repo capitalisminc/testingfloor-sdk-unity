@@ -28,6 +28,8 @@ namespace TestingFloorSdk.Editor {
         SerializedProperty _movementMinStepFovDegrees;
         SerializedProperty _movementMinPingCameraDistance;
         SerializedProperty _movementMinStepCameraDistance;
+        SerializedProperty _movementMinPingOrthoWidth;
+        SerializedProperty _movementMinStepOrthoWidth;
         SerializedProperty _objectSampleRateHz;
         SerializedProperty _maxTrackedObjects;
         SerializedProperty _batchMaxEvents;
@@ -62,6 +64,8 @@ namespace TestingFloorSdk.Editor {
             _movementMinStepFovDegrees = serializedObject.FindProperty("movementMinStepFovDegrees");
             _movementMinPingCameraDistance = serializedObject.FindProperty("movementMinPingCameraDistance");
             _movementMinStepCameraDistance = serializedObject.FindProperty("movementMinStepCameraDistance");
+            _movementMinPingOrthoWidth = serializedObject.FindProperty("movementMinPingOrthoWidth");
+            _movementMinStepOrthoWidth = serializedObject.FindProperty("movementMinStepOrthoWidth");
             _objectSampleRateHz = serializedObject.FindProperty("objectSampleRateHz");
             _maxTrackedObjects = serializedObject.FindProperty("maxTrackedObjects");
             _batchMaxEvents = serializedObject.FindProperty("batchMaxEvents");
@@ -189,6 +193,14 @@ namespace TestingFloorSdk.Editor {
                     EditorGUILayout.PropertyField(
                         _movementMinStepCameraDistance,
                         new GUIContent("Min Step Camera Distance", "Per-frame camera world-position movement smaller than this is treated as jitter and ignored.")
+                    );
+                    EditorGUILayout.PropertyField(
+                        _movementMinPingOrthoWidth,
+                        new GUIContent("Min Ping Ortho Width", "Accumulated change in an orthographic camera's view width required to fire a ping event.")
+                    );
+                    EditorGUILayout.PropertyField(
+                        _movementMinStepOrthoWidth,
+                        new GUIContent("Min Step Ortho Width", "Per-frame orthographic view-width change smaller than this is treated as jitter and ignored.")
                     );
                 }
             }

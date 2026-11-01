@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.6.0
+
+### Added
+
+- Orthographic cameras send `camera.ortho_width`, the view's width, instead of
+  `camera.fov`, which an orthographic camera ignores. The new session state
+  `camera.projection` says `orthographic` or `perspective`, and
+  `camera.fov_axis` is sent only for a perspective camera. Every camera sample
+  also sends `camera.up`, which orients a camera that looks straight down.
+- `TestingFloor.SetCameraFocusSource` sends `camera.focus`, the point at the
+  center of the view, such as a strategy camera's pivot.
+  `ClearCameraFocusSource` removes it.
+- A change of orthographic width is movement, reported as
+  `movement.ortho_width_delta` in meters and tuned by
+  `movementMinPingOrthoWidth` and `movementMinStepOrthoWidth`.
+
 ## 0.5.1
 
 ### Fixed

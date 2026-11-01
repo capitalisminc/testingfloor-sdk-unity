@@ -11,6 +11,7 @@ namespace TestingFloorSdk {
         const string MovementRotationKey = "movement.rotation_degrees";
         const string MovementFovDeltaKey = "movement.fov_delta";
         const string MovementCameraDistanceKey = "movement.camera_distance";
+        const string MovementOrthoWidthDeltaKey = "movement.ortho_width_delta";
 
         MovementSampler _sampler;
         Action<MovementEvent> _emit;
@@ -55,7 +56,8 @@ namespace TestingFloorSdk {
                 playerPosition: playerPosition,
                 cameraPosition: t.position,
                 cameraRotation: t.rotation,
-                cameraFov: camera.fieldOfView);
+                cameraFov: camera.orthographic ? (float?)null : camera.fieldOfView,
+                cameraOrthoWidth: camera.orthographic ? BuiltInContextProvider.OrthographicWidth(camera) : (float?)null);
         }
 
         void ConfigureFromSettings() {
@@ -72,6 +74,8 @@ namespace TestingFloorSdk {
             _sampler.MinStepFovDegrees = Mathf.Max(0f, settings.movementMinStepFovDegrees);
             _sampler.MinPingCameraDistance = Mathf.Max(0f, settings.movementMinPingCameraDistance);
             _sampler.MinStepCameraDistance = Mathf.Max(0f, settings.movementMinStepCameraDistance);
+            _sampler.MinPingOrthoWidth = Mathf.Max(0f, settings.movementMinPingOrthoWidth);
+            _sampler.MinStepOrthoWidth = Mathf.Max(0f, settings.movementMinStepOrthoWidth);
         }
 
         internal static void TrackMovementEvent(MovementEvent ev) {
@@ -91,6 +95,9 @@ namespace TestingFloorSdk {
             }
             if (ev.CameraDistance > 0f) {
                 builder = builder.Set(MovementCameraDistanceKey, (double)ev.CameraDistance);
+            }
+            if (ev.OrthoWidthDelta > 0f) {
+                builder = builder.Set(MovementOrthoWidthDeltaKey, (double)ev.OrthoWidthDelta);
             }
             builder.Send();
         }

@@ -13,24 +13,28 @@ namespace TestingFloorSdk {
         public readonly Vector3? CameraPosition;
         public readonly Quaternion? CameraRotation;
         public readonly float? CameraFov;
+        public readonly float? CameraOrthoWidth;
 
         public ActivitySample(
             Vector3? playerPosition = null,
             Vector3? cameraPosition = null,
             Quaternion? cameraRotation = null,
-            float? cameraFov = null
+            float? cameraFov = null,
+            float? cameraOrthoWidth = null
         ) {
             PlayerPosition = playerPosition;
             CameraPosition = cameraPosition;
             CameraRotation = cameraRotation;
             CameraFov = cameraFov;
+            CameraOrthoWidth = cameraOrthoWidth;
         }
 
         public bool IsEmpty =>
             !PlayerPosition.HasValue
             && !CameraPosition.HasValue
             && !CameraRotation.HasValue
-            && !CameraFov.HasValue;
+            && !CameraFov.HasValue
+            && !CameraOrthoWidth.HasValue;
     }
 
     internal readonly struct MovementEvent {
@@ -40,6 +44,7 @@ namespace TestingFloorSdk {
         public readonly float RotationDegrees; // camera rotation degrees in the segment
         public readonly float FovDelta;        // sum of |fov_step| in the segment
         public readonly float CameraDistance;  // camera world position meters in the segment
+        public readonly float OrthoWidthDelta; // sum of |orthographic width step| meters in the segment
 
         public MovementEvent(
             string reason,
@@ -47,7 +52,8 @@ namespace TestingFloorSdk {
             float duration = 0f,
             float rotationDegrees = 0f,
             float fovDelta = 0f,
-            float cameraDistance = 0f
+            float cameraDistance = 0f,
+            float orthoWidthDelta = 0f
         ) {
             Reason = reason;
             Distance = distance;
@@ -55,6 +61,7 @@ namespace TestingFloorSdk {
             RotationDegrees = rotationDegrees;
             FovDelta = fovDelta;
             CameraDistance = cameraDistance;
+            OrthoWidthDelta = orthoWidthDelta;
         }
     }
 
@@ -71,6 +78,8 @@ namespace TestingFloorSdk {
         public float MinStepFovDegrees;
         public float MinPingCameraDistance;
         public float MinStepCameraDistance;
+        public float MinPingOrthoWidth;
+        public float MinStepOrthoWidth;
 
         bool _hasLastSample;
         bool _isMoving;
@@ -84,12 +93,14 @@ namespace TestingFloorSdk {
         float _runRotation;
         float _runFov;
         float _runCameraDistance;
+        float _runOrthoWidth;
 
         // Ping accumulators reset on each Ping emission and after Start.
         float _pingDistance;
         float _pingRotation;
         float _pingFov;
         float _pingCameraDistance;
+        float _pingOrthoWidth;
 
         Vector3 _lastSamplePosition;
         bool _hasLastPlayerPosition;
@@ -99,6 +110,8 @@ namespace TestingFloorSdk {
         bool _hasLastCameraRotation;
         float _lastCameraFov;
         bool _hasLastCameraFov;
+        float _lastCameraOrthoWidth;
+        bool _hasLastCameraOrthoWidth;
 
         public bool IsMoving => _isMoving;
 
@@ -110,14 +123,17 @@ namespace TestingFloorSdk {
             _runRotation = 0f;
             _runFov = 0f;
             _runCameraDistance = 0f;
+            _runOrthoWidth = 0f;
             _pingDistance = 0f;
             _pingRotation = 0f;
             _pingFov = 0f;
             _pingCameraDistance = 0f;
+            _pingOrthoWidth = 0f;
             _hasLastPlayerPosition = false;
             _hasLastCameraPosition = false;
             _hasLastCameraRotation = false;
             _hasLastCameraFov = false;
+            _hasLastCameraOrthoWidth = false;
         }
 
         public void Step(float now, in ActivitySample sample, Action<MovementEvent> emit) {
@@ -135,12 +151,14 @@ namespace TestingFloorSdk {
             var camPosStep = StepDistance(sample.CameraPosition, ref _lastCameraPosition, ref _hasLastCameraPosition);
             var rotStep = StepRotation(sample.CameraRotation, ref _lastCameraRotation, ref _hasLastCameraRotation);
             var fovStep = StepFov(sample.CameraFov, ref _lastCameraFov, ref _hasLastCameraFov);
+            var orthoStep = StepFov(sample.CameraOrthoWidth, ref _lastCameraOrthoWidth, ref _hasLastCameraOrthoWidth);
 
             var movedPos = posStep > 0f && posStep >= MinStep;
             var movedCamPos = camPosStep > 0f && camPosStep >= MinStepCameraDistance;
             var movedRot = rotStep > 0f && rotStep >= MinStepRotationDegrees;
             var movedFov = fovStep > 0f && fovStep >= MinStepFovDegrees;
-            var movedAny = movedPos || movedCamPos || movedRot || movedFov;
+            var movedOrtho = orthoStep > 0f && orthoStep >= MinStepOrthoWidth;
+            var movedAny = movedPos || movedCamPos || movedRot || movedFov || movedOrtho;
 
             if (movedAny) {
                 if (movedPos) {
@@ -158,6 +176,10 @@ namespace TestingFloorSdk {
                 if (movedFov) {
                     _runFov += fovStep;
                     _pingFov += fovStep;
+                }
+                if (movedOrtho) {
+                    _runOrthoWidth += orthoStep;
+                    _pingOrthoWidth += orthoStep;
                 }
                 _lastMovementTime = now;
 
@@ -177,6 +199,7 @@ namespace TestingFloorSdk {
                         _pingRotation = 0f;
                         _pingFov = 0f;
                         _pingCameraDistance = 0f;
+                        _pingOrthoWidth = 0f;
                     }
                 }
             }
@@ -194,15 +217,18 @@ namespace TestingFloorSdk {
                     runDuration,
                     _runRotation,
                     _runFov,
-                    _runCameraDistance));
+                    _runCameraDistance,
+                    _runOrthoWidth));
                 _runDistance = 0f;
                 _runRotation = 0f;
                 _runFov = 0f;
                 _runCameraDistance = 0f;
+                _runOrthoWidth = 0f;
                 _pingDistance = 0f;
                 _pingRotation = 0f;
                 _pingFov = 0f;
                 _pingCameraDistance = 0f;
+                _pingOrthoWidth = 0f;
             }
 
             if (!ShouldEmitPing(now)) return;
@@ -211,10 +237,12 @@ namespace TestingFloorSdk {
             var pingRotation = _pingRotation;
             var pingFov = _pingFov;
             var pingCameraDistance = _pingCameraDistance;
+            var pingOrthoWidth = _pingOrthoWidth;
             _pingDistance = 0f;
             _pingRotation = 0f;
             _pingFov = 0f;
             _pingCameraDistance = 0f;
+            _pingOrthoWidth = 0f;
             _lastPingTime = now;
             emit?.Invoke(new MovementEvent(
                 MovementReasons.Ping,
@@ -222,7 +250,8 @@ namespace TestingFloorSdk {
                 pingDuration,
                 pingRotation,
                 pingFov,
-                pingCameraDistance));
+                pingCameraDistance,
+                pingOrthoWidth));
         }
 
         bool ShouldEmitPing(float now) {
@@ -230,7 +259,8 @@ namespace TestingFloorSdk {
             return _pingDistance >= MinPingDistance
                 || _pingRotation >= MinPingRotationDegrees
                 || _pingFov >= MinPingFovDegrees
-                || _pingCameraDistance >= MinPingCameraDistance;
+                || _pingCameraDistance >= MinPingCameraDistance
+                || _pingOrthoWidth >= MinPingOrthoWidth;
         }
 
         static float StepDistance(Vector3? current, ref Vector3 last, ref bool hasLast) {
@@ -286,6 +316,7 @@ namespace TestingFloorSdk {
             _hasLastCameraPosition = false;
             _hasLastCameraRotation = false;
             _hasLastCameraFov = false;
+            _hasLastCameraOrthoWidth = false;
             // Seed last-known values without producing a delta on this frame.
             if (sample.PlayerPosition.HasValue) {
                 _lastSamplePosition = sample.PlayerPosition.Value;
@@ -303,6 +334,10 @@ namespace TestingFloorSdk {
                 _lastCameraFov = sample.CameraFov.Value;
                 _hasLastCameraFov = true;
             }
+            if (sample.CameraOrthoWidth.HasValue) {
+                _lastCameraOrthoWidth = sample.CameraOrthoWidth.Value;
+                _hasLastCameraOrthoWidth = true;
+            }
             _lastPingTime = now;
             _lastMovementTime = now;
             _movementStartTime = -1f;
@@ -311,10 +346,12 @@ namespace TestingFloorSdk {
             _runRotation = 0f;
             _runFov = 0f;
             _runCameraDistance = 0f;
+            _runOrthoWidth = 0f;
             _pingDistance = 0f;
             _pingRotation = 0f;
             _pingFov = 0f;
             _pingCameraDistance = 0f;
+            _pingOrthoWidth = 0f;
             _hasLastSample = true;
             _isMoving = false;
         }

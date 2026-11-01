@@ -32,6 +32,8 @@ namespace TestingFloorSdk {
         public float movementMinStepFovDegrees = 0.05f;
         public float movementMinPingCameraDistance = 0.5f;
         public float movementMinStepCameraDistance = 0.005f;
+        public float movementMinPingOrthoWidth = 0.5f;
+        public float movementMinStepOrthoWidth = 0.005f;
 
         public const float DefaultObjectSampleRateHz = 4f;
         public const int DefaultMaxTrackedObjects = 256;

@@ -128,8 +128,8 @@ changed keys before the event. A removed key is sent as `null`. A keyframe
 repeats every value when the play session starts, when a recording starts,
 every 5 minutes and after any record is dropped. Testing Floor applies the
 state at each moment to the events, so you can filter by these values as
-before. The SDK also sends `viewport.width`, `viewport.height` and
-`camera.fov_axis` as state.
+before. The SDK also sends `viewport.width`, `viewport.height`,
+`camera.projection` and `camera.fov_axis` as state.
 
 Keep values that row-level analytics filter by, such as `game_level.id` and the
 game clock, in the context provider. A game without a state provider keeps all
@@ -196,18 +196,33 @@ TestingFloor.SetMovementTrackingEnabled(true);
 ```
 
 Every event includes available player/camera positions, camera rotation,
-forward direction, and vertical FOV; viewport size is sent as session state.
-Positions use native meters.
+forward and up directions, and vertical FOV; viewport size is sent as session
+state. Positions use native meters.
 A function returning `Vector3?` can replace the player transform; return `null`
 when unavailable. Use `SetCameraSource(Func<Camera>)` for a custom camera.
 
+An orthographic camera sends `camera.ortho_width`, the view's width
+(`2 × orthographicSize × aspect`), instead of a FOV, and `camera.projection` is
+`orthographic`. If the camera orbits or follows a point, such as the pivot of a
+strategy or sim camera, give the SDK that point. Testing Floor centers the
+camera's view on the map there:
+
+```csharp
+TestingFloor.SetCameraFocusSource(cameraPivot);
+```
+
+`SetPositionSource` is for the character the player plays. If the player directs
+many characters instead, don't point it at a selected one: leave it unset and
+track each character with `TrackObject`.
+
 Movement is opt-in and samples player or camera-only activity. `player_moved`
 reports `start`, `ping`, and `stop`, with nonzero distance, camera distance,
-rotation, FOV-change, and duration metrics. Defaults target about two path
+rotation, FOV-change, orthographic width change, and duration metrics. Defaults target about two path
 samples per second. Configure thresholds in the settings asset rather than
 sending movement events every frame. Timing uses unscaled time during pause.
 
-Clear sources with `ClearPositionSource()` / `ClearCameraSource()`. Runtime
+Clear sources with `ClearPositionSource()`, `ClearCameraSource()` and
+`ClearCameraFocusSource()`. Runtime
 movement overrides can be reset with `UseConfiguredMovementTracking()`.
 
 ## Teleports

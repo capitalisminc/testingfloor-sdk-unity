@@ -24,16 +24,34 @@ namespace TestingFloorSdk {
                 snapshot.Set("camera.euler.z", euler.z);
                 var forward = t.forward;
                 snapshot.SetVector("camera.forward", forward);
-                snapshot.Set("camera.fov", (double)camera.fieldOfView);
+                snapshot.SetVector("camera.up", t.up);
+                // An orthographic camera ignores fieldOfView, so it sends its view width instead.
+                if (camera.orthographic) {
+                    snapshot.Set("camera.ortho_width", (double)OrthographicWidth(camera));
+                } else {
+                    snapshot.Set("camera.fov", (double)camera.fieldOfView);
+                }
                 snapshot.Platform = snapshot.Platform.WithScreenSize(camera.pixelWidth, camera.pixelHeight);
             }
+
+            var focus = global::TestingFloorSdk.TestingFloor.GetCameraFocus();
+            if (focus.HasValue) {
+                snapshot.SetVector("camera.focus", focus.Value);
+            }
         }
+
+        internal static float OrthographicWidth(Camera camera) => 2f * camera.orthographicSize * camera.aspect;
 
         // Values that stay true until they change are sent as session state.
         internal static void FillState(ref ContextSnapshot snapshot) {
             var camera = global::TestingFloorSdk.TestingFloor.GetCamera();
             if (camera == null) return;
-            snapshot.Set("camera.fov_axis", "vertical");
+            if (camera.orthographic) {
+                snapshot.Set("camera.projection", "orthographic");
+            } else {
+                snapshot.Set("camera.projection", "perspective");
+                snapshot.Set("camera.fov_axis", "vertical");
+            }
             snapshot.Set("viewport.width", (long)camera.pixelWidth);
             snapshot.Set("viewport.height", (long)camera.pixelHeight);
         }

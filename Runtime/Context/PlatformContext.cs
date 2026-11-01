@@ -138,6 +138,6 @@ namespace TestingFloorSdk {
     }
 
     internal static class TestingFloorVersion {
-        public const string Value = "0.5.1";
+        public const string Value = "0.6.0";
     }
 }
