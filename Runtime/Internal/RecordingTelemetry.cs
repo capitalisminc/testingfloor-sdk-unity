@@ -37,18 +37,20 @@ namespace TestingFloorSdk.Internal {
 
         // Register before admitting events, then check closure again. An SDK racing Stop either
         // enters the recorder's frozen participant list or admits no gameplay for the recording.
+        // Registration is best effort: a host that can read the directory but not write to it,
+        // such as a sandboxed macOS app, still attaches, watches closed.json and sends its marker.
+        // Consumers find that run by the recording UUID on its events.
         internal static bool Register(TestingFloorRecording recording, string session, Action<TestingFloorRecording, string> onComplete = null, Action beforeClose = null) {
             if (recording == null || IsCompleted(recording, session)) return false;
             if (string.IsNullOrWhiteSpace(recording.TelemetryDirectory)) return false;
-            try {
-                if (IsClosed(recording) || !Directory.Exists(recording.TelemetryDirectory)) { recording.Closed = true; return false; }
-                File.WriteAllText(Path.Combine(recording.TelemetryDirectory, session + ".session"), "");
-                SetRecording(recording, session, onComplete, beforeClose);
-                AfterRegistrationForTesting?.Invoke(recording);
-                Poll();
-                return !recording.Closed;
-            } catch (IOException) { recording.Closed = true; return false; }
-            catch (UnauthorizedAccessException) { recording.Closed = true; return false; }
+            if (IsClosed(recording) || !Directory.Exists(recording.TelemetryDirectory)) { recording.Closed = true; return false; }
+            try { File.WriteAllText(Path.Combine(recording.TelemetryDirectory, session + ".session"), ""); }
+            catch (IOException) { }
+            catch (UnauthorizedAccessException) { }
+            SetRecording(recording, session, onComplete, beforeClose);
+            AfterRegistrationForTesting?.Invoke(recording);
+            Poll();
+            return !recording.Closed;
         }
 
         internal static void RegisterLegacy(TestingFloorRecording recording, string session, Action<TestingFloorRecording, string> onComplete, Action beforeClose) {

@@ -453,6 +453,32 @@ namespace TestingFloorSdk.Tests {
         }
 
         [Test]
+        public void UnwritableRecorderDirectoryStillTagsEventsAndSendsTheMarker() {
+            using var directory = new UnwritableDirectory();
+            try {
+                var recording = new TestingFloorRecording("example-recording", null, true, directory.Path);
+                TestingFloorRecording.UseForTesting(recording);
+                Assert.IsTrue(global::TestingFloorSdk.TestingFloor.RegisterRecording(recording));
+                global::TestingFloorSdk.TestingFloor.Track("level_started").Send();
+
+                var started = _records.Single(record => record.EventType == "level_started");
+                Assert.AreSame(recording, started.Recording);
+                StringAssert.Contains("\"recording_uuid\":\"example-recording\"", Json(started));
+                Assert.IsFalse(System.IO.File.Exists(System.IO.Path.Combine(directory.Path, global::TestingFloorSdk.TestingFloor.PlaySessionId + ".session")));
+
+                directory.Close();
+                RecordingTelemetry.Poll();
+
+                Assert.IsTrue(recording.Closed);
+                Assert.AreEqual("$tf_telemetry_complete", Names().Last());
+                Assert.AreSame(recording, _records.Last().Recording);
+            }
+            finally {
+                RecordingTelemetry.ResetStatics();
+            }
+        }
+
+        [Test]
         public void RecordingCloseToleratesCallbacksThatSendEvents() {
             var directory = System.IO.Path.Combine(System.IO.Path.GetTempPath(), Guid.NewGuid().ToString());
             System.IO.Directory.CreateDirectory(directory);

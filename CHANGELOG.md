@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.5.1
+
+### Fixed
+
+- A build that could read the recorder's telemetry directory but not create
+  files in it, such as a sandboxed macOS app, failed to register its run and
+  then sent no recording telemetry at all: events lacked the recording's UUID
+  and no completion marker was sent. Registration is now best effort. Such a
+  run still attaches to the recording, watches `closed.json` and sends its
+  completion marker. It is missing from the recorder's participant list, and
+  the server finds it by the recording UUID on its events. A missing directory
+  or an existing `closed.json` still admits no recording events.
+
 ## 0.5.0
 
 ### Added

@@ -265,6 +265,8 @@ policy. Do not construct handoffs manually for normal desktop app use.
 
 The SDK registers `<run UUID>.session` before admitting recording events and writes
 `<run UUID>.status.json` with attachment state, reason, capabilities and freshness.
+Registration is best effort: a sandboxed build that cannot write to the directory
+still attaches, watches `closed.json` and sends its completion marker.
 Recorder QR suppression follows the valid recording handoff even when telemetry
 is disabled. Local attachment is not a warehouse delivery acknowledgement. Completion markers
 are ordered behind accepted data and report drop counts and interruptions for that
