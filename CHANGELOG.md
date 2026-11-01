@@ -45,9 +45,22 @@
   provider.
 - `TestingFloor.SetUserId` and `SetDeviceId` send your game's own ids as
   `$user_id` and `$device_id` instead of the generated ones.
+- Editor telemetry follows the desktop app's recordings. A recording can start
+  before or during Play, stop, and be followed by another without restarting
+  Play. Each recording gets fresh state and object keyframes, and the Play run
+  ID stays the same. `TestingFloor.IsCollecting` and
+  `TestingFloor.CollectionReason` say whether the SDK is collecting and why not,
+  and `TestingFloor.RecordingChanged` reports the active recording, or null when
+  it detaches. The SDK writes `<run UUID>.status.json` in the recording's
+  telemetry directory with its attachment state.
 
 ### Changed
 
+- Play Mode in the Editor sends telemetry while the desktop app records it, even
+  when `enableInEditor` is false. The new `enableInEditorWhileRecording`
+  setting, on by default, controls this; turn both off for no editor telemetry.
+  Outside a recording, the Editor still sends telemetry only with
+  `enableInEditor`.
 - `$tf.os` is the operating system family (`Windows`, `macOS`, `Linux`, `iOS`,
   `Android`, `tvOS`, `visionOS`, `Web`, `PlayStation`, `Xbox`, `Switch`), not
   Unity's platform name such as `WindowsPlayer` or `OSXEditor`. Other platforms
