@@ -11,7 +11,7 @@ namespace TestingFloorSdk {
         public readonly string DeviceModel;
         public readonly string SdkVersion;
 
-        PlatformContext(
+        internal PlatformContext(
             string os,
             string locale,
             string appVersion,

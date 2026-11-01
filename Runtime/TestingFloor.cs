@@ -13,6 +13,7 @@ namespace TestingFloorSdk {
         const double StatePollIntervalSeconds = 1.0;
         internal const string StateRecordName = "$tf_state";
         internal const string ObjectsRecordName = "$tf_objects";
+        internal const string TelemetryCompleteRecordName = "$tf_telemetry_complete";
         const string LevelKeyPrefix = "game_level.";
 
         static TestingFloorSettings _settings;
@@ -811,7 +812,7 @@ namespace TestingFloorSdk {
         }
 
         internal static void EnqueueRecordingCompletion(TestingFloorRecording recording, string session) {
-            var marker = new TelemetryEvent("$tf_telemetry_complete", new Dictionary<string, object> { ["interrupted"] = recording.Interrupted },
+            var marker = new TelemetryEvent(TelemetryCompleteRecordName, new Dictionary<string, object> { ["interrupted"] = recording.Interrupted },
                 ContextSnapshot.Create(_platformContext), Identity.DeviceId, Identity.ProfileId,
                 DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), session, recording, seq: _seq + 1);
             Enqueue(marker);

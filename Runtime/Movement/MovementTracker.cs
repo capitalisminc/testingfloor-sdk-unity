@@ -74,7 +74,7 @@ namespace TestingFloorSdk {
             _sampler.MinStepCameraDistance = Mathf.Max(0f, settings.movementMinStepCameraDistance);
         }
 
-        static void TrackMovementEvent(MovementEvent ev) {
+        internal static void TrackMovementEvent(MovementEvent ev) {
             var builder = global::TestingFloorSdk.TestingFloor.Track(MovementEventName)
                 .Set(MovementReasonKey, ev.Reason);
             if (ev.Distance > 0f) {

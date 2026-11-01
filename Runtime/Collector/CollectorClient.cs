@@ -29,6 +29,8 @@ namespace TestingFloorSdk.Internal {
     }
 
     internal sealed class CollectorClient : IBlockingBatchSender {
+        internal const string BatchPath = "/v1/batch";
+
         readonly TestingFloorSettings _settings;
         readonly bool _automation;
         readonly JsonPayloadWriter _writer = new();
@@ -72,7 +74,7 @@ namespace TestingFloorSdk.Internal {
                 outcome = new BatchSendOutcome(SendResult.Success, consumed, consumed, recordingSkipped);
                 return null;
             }
-            var request = new UnityWebRequest($"{_settings.endpoint.Trim().TrimEnd('/')}/v1/batch", UnityWebRequest.kHttpVerbPOST);
+            var request = new UnityWebRequest($"{_settings.endpoint.Trim().TrimEnd('/')}{BatchPath}", UnityWebRequest.kHttpVerbPOST);
             request.uploadHandler = new UploadHandlerRaw(bytes);
             request.downloadHandler = new DownloadHandlerBuffer();
             request.timeout = 10;
@@ -144,7 +146,7 @@ namespace TestingFloorSdk.Internal {
             return send.Outcome;
         }
 
-        internal static bool IsRecordingGameplay(TelemetryEvent ev) => ev.Recording != null && ev.EventType != "$tf_telemetry_complete";
+        internal static bool IsRecordingGameplay(TelemetryEvent ev) => ev.Recording != null && ev.EventType != TestingFloor.TelemetryCompleteRecordName;
 
         internal static int CountRecording(IReadOnlyList<TelemetryEvent> events, int count) {
             var result = 0;

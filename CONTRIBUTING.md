@@ -20,8 +20,8 @@ Use a minimal Unity 6 host project. Add this package as a local dependency in
 ```
 
 Use the Test Runner for **both EditMode and PlayMode**. EditMode covers the
-inspector; PlayMode covers runtime payloads, delivery, movement, teleports, and
-QR behavior. From the command line, run each platform separately:
+inspector and the telemetry contract; PlayMode covers runtime payloads, delivery,
+movement, teleports, and QR behavior. From the command line, run each platform separately:
 
 ```sh
 Unity -batchmode -nographics -projectPath /path/to/SdkTestHost \
@@ -40,6 +40,13 @@ Keep `.meta` files with every imported source or document. Runtime transport and
 serialization types stay internal; expose only the API game integrations need.
 
 ## Change the SDK contract
+
+Wire field names, types and limits come from the Testing Floor telemetry
+contract. This package keeps an unedited copy at
+[Tests/Contract/telemetry_contract.json](Tests/Contract/telemetry_contract.json),
+and the EditMode contract tests compare the SDK's payloads with it. Do not edit
+the copy to make a test pass; [Tests/Contract/README.md](Tests/Contract/README.md)
+explains how to refresh it.
 
 Keep [SDK_CONTRACT.md](SDK_CONTRACT.md) identical to the public Unreal SDK copy.
 When changing identity, fields, defaults, limits, retry policy, or units, update
