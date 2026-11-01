@@ -230,6 +230,9 @@ several Play runs. No synthetic session bookend events are emitted.
 
 The desktop app passes `--testing-floor={"recording_uuid":"..."}` or writes
 `Library/TestingFloor/recording-payload.json`. It owns the handoff and its cleanup.
+A handoff file with a recording lease wins over the launch argument, even after
+the lease expires. A valid launch argument wins over an older handoff file
+without a lease.
 The SDK watches for changes during Play, including while paused. Start a recording
 before or after Play, stop it, and start another without restarting the game.
 Each recording receives fresh state and object keyframes while the Play run ID

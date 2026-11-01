@@ -51,6 +51,22 @@ namespace TestingFloorSdk.Tests {
         }
 
         [Test]
+        public void LeaseSidecarBeatsTheLaunchArgumentWhichBeatsALegacySidecar() {
+            var argument = new TestingFloorRecording("from-argument", null, true);
+            var legacy = new TestingFloorRecording("from-legacy-sidecar", null, true);
+            var expiredLease = new TestingFloorRecording("from-lease-sidecar", null, true, "example-directory") {
+                LeaseVersion = 1, TelemetryRequested = true, LeaseExpiresAtUnixMs = 1,
+            };
+
+            Assert.AreSame(expiredLease, TestingFloorRecording.Choose(expiredLease, () => argument),
+                "A lease sidecar wins even after it expires, so expiry cannot revive the launch argument");
+            Assert.AreSame(argument, TestingFloorRecording.Choose(legacy, () => argument));
+            Assert.AreSame(legacy, TestingFloorRecording.Choose(legacy, () => null));
+            Assert.AreSame(argument, TestingFloorRecording.Choose(null, () => argument));
+            Assert.IsNull(TestingFloorRecording.Choose(null, () => null));
+        }
+
+        [Test]
         public void AutomationAlwaysWinsOverForcedQr() {
             var settings = ScriptableObject.CreateInstance<TestingFloorSettings>();
             try {

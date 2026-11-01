@@ -71,13 +71,21 @@ namespace TestingFloorSdk {
 
         internal static TestingFloorRecording Discover() {
             if (DiscoveryForTesting != null) return DiscoveryForTesting();
-            // A new editor handoff takes precedence over an argument from editor startup.
-            var candidate = Application.isEditor ? ResolveFromSidecar() ?? ResolveFromArgs() : ResolveFromArgs() ?? ResolveFromSidecar();
-            if (Application.isEditor && candidate != null && candidate.EditorPid > 0) {
+            var sidecar = ResolveFromSidecar();
+            // A sidecar written for another editor process belongs to that editor.
+            if (Application.isEditor && sidecar != null && sidecar.EditorPid > 0) {
                 using var process = System.Diagnostics.Process.GetCurrentProcess();
-                if (candidate.EditorPid != process.Id) return null;
+                if (sidecar.EditorPid != process.Id) sidecar = null;
             }
-            return candidate;
+            return Choose(sidecar, ResolveFromArgs);
+        }
+
+        // A versioned lease sidecar wins even once its lease expires, so expiry suspends the
+        // association instead of reviving an older launch argument. Otherwise a valid launch
+        // argument wins over a legacy sidecar.
+        internal static TestingFloorRecording Choose(TestingFloorRecording sidecar, Func<TestingFloorRecording> launchArgument) {
+            if (sidecar != null && sidecar.LeaseVersion != 0) return sidecar;
+            return launchArgument() ?? sidecar;
         }
 
         internal static void UseForTesting(TestingFloorRecording recording) {

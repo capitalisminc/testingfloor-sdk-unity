@@ -32,6 +32,11 @@
   warning per name and counts the event in `DroppedEventCount`. It does not count
   it toward a recording's `dropped_events` or start a keyframe. Earlier versions
   sent such events, which Testing Floor could mistake for its own records.
+- A valid `--testing-floor` launch argument now wins over a handoff file without
+  a recording lease in the Editor too, as it already did in builds and in the
+  Unreal SDK. A handoff file with a lease still wins, even after the lease
+  expires. A handoff file written for another editor process no longer hides the
+  launch argument.
 - The recording completion marker carries the same `$tf` context as other
   records. Before, it could leave out the platform fields when no event had been
   sent yet.
