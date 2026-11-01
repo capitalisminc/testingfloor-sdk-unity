@@ -42,6 +42,25 @@ namespace TestingFloorSdk {
         public void SetIfPresent(string key, double? value) { if (value.HasValue) Set(key, value.Value); }
         public void SetIfPresent(string key, bool? value) { if (value.HasValue) Set(key, value.Value); }
 
+        /// <summary>Reads a value set earlier in this snapshot.</summary>
+        public bool TryGetValue(string key, out object value) {
+            value = null;
+            return key != null && Properties != null && Properties.TryGetValue(key, out value);
+        }
+
+        /// <summary>Removes a value. Returns whether the snapshot had it.</summary>
+        public bool Remove(string key) => key != null && Properties != null && Properties.Remove(key);
+
+        /// <summary>A copy of the snapshot's keys, so values can change while you go through them.</summary>
+        public string[] Keys {
+            get {
+                if (Properties == null || Properties.Count == 0) return Array.Empty<string>();
+                var keys = new string[Properties.Count];
+                Properties.Keys.CopyTo(keys, 0);
+                return keys;
+            }
+        }
+
         internal static void WriteObjectValue(TelemetryJsonWriter writer, string key, object value) {
             switch (value) {
                 case null:

@@ -44,6 +44,17 @@ reserved `$` keys, and nonfinite numbers are omitted. Convert enums or custom
 values explicitly; nested objects are unsupported. `SetVector(prefix, vector)`
 adds `.x`, `.y`, and `.z` fields.
 
+The SDK adds its own context to every record under `$tf`: SDK version, Unity
+version, `editor` (true in Play Mode in the Editor), `os` as the operating system
+family such as `Windows` or `macOS`, `locale` as a BCP 47 tag such as `en-US`,
+`app_version` from `Application.version` (left out when empty), device model and
+screen size. Times are UTC with exactly milliseconds, such as
+`2026-04-19T18:32:00.000Z`.
+
+Event names beginning with `$tf_` are reserved for Testing Floor's own records.
+`Send()` refuses them, returns false and logs one warning per name; the refused
+event counts toward `DroppedEventCount`.
+
 A context provider adds small values that describe each moment, such as level,
 health and game clock, to every event. Keep it inexpensive. Event properties
 win when they use the same key as context.
@@ -59,6 +70,29 @@ public sealed class MomentContext : ITelemetryContextProvider {
 // During your game's initialization:
 TestingFloor.RegisterContextProvider(new MomentContext());
 ```
+
+An event processor runs last, after context, player and camera values and the
+event's own properties are merged. It can read, change or remove any of them
+before the event is queued, for example to convert your game's coordinate frame:
+
+```csharp
+public sealed class ToCentimeters : ITelemetryContextProvider {
+    public void FillSnapshot(ref ContextSnapshot snapshot) {
+        foreach (var key in snapshot.Keys) {
+            if (key.StartsWith("player.position.") && snapshot.TryGetValue(key, out var value)) {
+                snapshot.Set(key, System.Convert.ToDouble(value) * 100);
+            }
+        }
+        snapshot.Remove("debug.overlay");
+    }
+}
+
+TestingFloor.RegisterEventProcessor(new ToCentimeters());
+```
+
+It runs for `player_moved` and `player_teleported` too, but not for session
+state or tracked-object records. Those records copy `game_level.*` from the
+processed event.
 
 Use SDK APIs and providers on Unity's main thread. Clear a provider with
 `RegisterContextProvider(null)` when its owner is torn down.
@@ -80,8 +114,13 @@ public sealed class SettingsState : ITelemetryContextProvider {
 
 TestingFloor.RegisterStateProvider(new SettingsState());
 TestingFloor.SetState("difficulty", "hard");   // or set one value directly
+TestingFloor.SetState("party.members", new[] { "ana", "kai" });
 TestingFloor.ClearState("difficulty");
 ```
+
+`SetState` accepts strings, integers, doubles, booleans, string arrays and
+integer arrays, like a provider, and its value wins over the provider's for the
+same key. Arrays are copied.
 
 The SDK reads state before each event and once a second, also while gameplay is
 paused. When a value changed, it queues a `$tf_state` record with only the
@@ -129,7 +168,7 @@ are in the settings asset.
 
 ## Player ID and Runs
 
-The SDK creates these ids itself and attaches them to every event, so you don't set an identity in code.
+The SDK creates these ids itself and attaches them to every event, so you don't need to set an identity in code.
 
 | On the wire | SDK property | In Testing Floor |
 | --- | --- | --- |
@@ -139,6 +178,7 @@ The SDK creates these ids itself and attaches them to every event, so you don't 
 
 - `ProfileId` is a random id kept in `{Application.persistentDataPath}/synced/profile_id`. It stays the same across launches on one machine. To keep one Player ID for a player across machines, include that file in your cloud save sync.
 - `DeviceId` is a random id kept in `PlayerPrefs`. Testing Floor uses it as the Player ID only when `ProfileId` is missing, for example when the SDK can't write the profile file.
+- If your game has its own player or account id, call `TestingFloor.SetUserId(id)` on each launch to send it as `$user_id` instead. `SetDeviceId(id)` does the same for `$device_id`. Pass `null` to go back to the generated id. The SDK does not save these ids.
 - `PlaySessionId` changes on every launch and every time you enter Play Mode in the Editor. Each value is one run in Testing Floor. A recording from the Testing Floor recorder can span several runs, for example when you stop and restart Play Mode.
 
 `TestingFloor.PlayerId` returns the Player ID that Testing Floor shows for this player. Put it on a feedback or debug screen so testers can tell you their ID, then assign that ID to the tester in Testing Floor. Their runs then show under their name.
@@ -190,6 +230,9 @@ several Play runs. No synthetic session bookend events are emitted.
 
 The desktop app passes `--testing-floor={"recording_uuid":"..."}` or writes
 `Library/TestingFloor/recording-payload.json`. It owns the handoff and its cleanup.
+A handoff file with a recording lease wins over the launch argument, even after
+the lease expires. A valid launch argument wins over an older handoff file
+without a lease.
 The SDK watches for changes during Play, including while paused. Start a recording
 before or after Play, stop it, and start another without restarting the game.
 Each recording receives fresh state and object keyframes while the Play run ID

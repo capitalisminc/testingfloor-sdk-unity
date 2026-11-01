@@ -51,6 +51,36 @@ namespace TestingFloorSdk.Tests {
         }
 
         [Test]
+        public void LeaseSidecarBeatsTheLaunchArgumentWhichBeatsALegacySidecar() {
+            var argument = new TestingFloorRecording("from-argument", null, true);
+            var legacy = new TestingFloorRecording("from-legacy-sidecar", null, true);
+            var expiredLease = new TestingFloorRecording("from-lease-sidecar", null, true, "example-directory") {
+                LeaseVersion = 1, TelemetryRequested = true, LeaseExpiresAtUnixMs = 1,
+            };
+
+            Assert.AreSame(expiredLease, TestingFloorRecording.Choose(expiredLease, () => argument),
+                "A lease sidecar wins even after it expires, so expiry cannot revive the launch argument");
+            Assert.AreSame(argument, TestingFloorRecording.Choose(legacy, () => argument));
+            Assert.AreSame(legacy, TestingFloorRecording.Choose(legacy, () => null));
+            Assert.AreSame(argument, TestingFloorRecording.Choose(null, () => argument));
+            Assert.IsNull(TestingFloorRecording.Choose(null, () => null));
+        }
+
+        [Test]
+        public void EditorIgnoresHandoffsForAnotherEditorFromEitherSource() {
+            var otherEditor = new TestingFloorRecording("other-editor", null, true) { EditorPid = 200 };
+            var thisEditor = new TestingFloorRecording("this-editor", null, true) { EditorPid = 100 };
+            var anyEditor = new TestingFloorRecording("any-editor", null, true);
+
+            Assert.IsNull(TestingFloorRecording.ForEditor(otherEditor, 100));
+            Assert.AreSame(thisEditor, TestingFloorRecording.ForEditor(thisEditor, 100));
+            Assert.AreSame(anyEditor, TestingFloorRecording.ForEditor(anyEditor, 100));
+            Assert.AreSame(otherEditor, TestingFloorRecording.ForEditor(otherEditor, 0), "Builds do not compare editor processes");
+            Assert.AreSame(anyEditor, TestingFloorRecording.Choose(anyEditor, () => TestingFloorRecording.ForEditor(otherEditor, 100)),
+                "A launch argument for another editor does not hide this editor's sidecar");
+        }
+
+        [Test]
         public void AutomationAlwaysWinsOverForcedQr() {
             var settings = ScriptableObject.CreateInstance<TestingFloorSettings>();
             try {

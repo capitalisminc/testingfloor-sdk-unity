@@ -15,7 +15,10 @@ namespace TestingFloorSdk.Tests.Editor {
     /// Tests/Contract/README.md.
     /// </summary>
     public class TelemetryContractTests {
-        static readonly Regex UtcTimestamp = new(@"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3,}(Z|\+00:00)$");
+        // SDK 0.5.0 sends exactly milliseconds and Z, the form the contract asks new SDKs for.
+        static readonly Regex UtcTimestamp = new(@"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$");
+        static readonly Regex LanguageTag = new(@"^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$");
+        static readonly string[] OsFamilies = { "Windows", "macOS", "Linux", "iOS", "Android", "tvOS", "visionOS", "Web", "PlayStation", "Xbox", "Switch" };
 
         readonly List<TelemetryEvent> _records = new();
         TestingFloorSettings _settings;
@@ -129,6 +132,27 @@ namespace TestingFloorSdk.Tests.Editor {
             CollectionAssert.AreEquivalent(TelemetryContract.Keys(fields), Properties(marker));
             foreach (var row in fields) AssertValue(row, marker[(string)row["key"]], "Completion field");
             AssertDeclaredEnvelope(marker);
+            var context = (Dictionary<string, object>)marker["$tf"];
+            CollectionAssert.IsSubsetOf(new[] { "sdk_version", "os", "editor", "recording_uuid", "seq" }, context.Keys,
+                "The marker carries the same context as other records");
+        }
+
+        [Test]
+        public void CapturedContextFollowsTheContractsValueRules() {
+            TestingFloor.Track("example_event").Send();
+
+            var context = (Dictionary<string, object>)Wire(First("example_event"))["$tf"];
+            var os = (string)context["os"];
+            Assert.IsTrue(OsFamilies.Contains(os) || os == Application.platform.ToString(),
+                $"$tf.os is {os}, neither an OS family nor the engine's platform name");
+            Assert.AreEqual(Application.isEditor, context["editor"]);
+            if (context.TryGetValue("locale", out var locale)) {
+                StringAssert.IsMatch(LanguageTag.ToString(), (string)locale, "$tf.locale is a BCP 47 tag");
+            }
+            foreach (var kvp in context) {
+                if (kvp.Value is string text) Assert.IsFalse(string.IsNullOrWhiteSpace(text), $"$tf.{kvp.Key} is empty");
+            }
+            Assert.AreEqual(!string.IsNullOrWhiteSpace(Application.version), context.ContainsKey("app_version"));
         }
 
         [Test]
@@ -232,6 +256,19 @@ namespace TestingFloorSdk.Tests.Editor {
         }
 
         [Test]
+        public void ReservedEventNamesAreRefused() {
+            var rule = TelemetryContract.Rows("reserved", row => TelemetryContract.Text(row, "kind") == "event_name_prefix").Single();
+            Assert.AreEqual(TestingFloor.ReservedEventPrefix, rule["pattern"]);
+            Assert.AreEqual("platform_only", rule["rule"]);
+            var platformRecords = TelemetryContract.Keys(TelemetryContract.Rows("platform_records"), "name");
+            Assert.IsTrue(platformRecords.All(name => !name.StartsWith("$") || name.StartsWith(TestingFloor.ReservedEventPrefix)));
+
+            UnityEngine.TestTools.LogAssert.Expect(LogType.Warning, new Regex("reserved"));
+            Assert.IsFalse(TestingFloor.Track(TestingFloor.StateRecordName).Send());
+            CollectionAssert.IsEmpty(_records);
+        }
+
+        [Test]
         public void LimitsAreTheContracts() {
             var sdk = new Dictionary<string, long> {
                 ["event_bytes"] = JsonPayloadWriter.CollectorEventByteCap,
@@ -300,14 +337,15 @@ namespace TestingFloorSdk.Tests.Editor {
         // A session state keyframe in a recording: it carries every $tf key the SDK sets.
         static TelemetryEvent FullRecord() {
             var platform = new PlatformContext(
-                os: "ExamplePlatform",
-                locale: "English",
+                os: "macOS",
+                locale: "en-US",
                 appVersion: "1.2.3",
                 unityVersion: "6000.0.0f1",
                 screenWidth: 1920,
                 screenHeight: 1080,
                 deviceModel: "example-device",
-                sdkVersion: TestingFloorVersion.Value);
+                sdkVersion: TestingFloorVersion.Value,
+                editor: true);
             return new TelemetryEvent(TestingFloor.StateRecordName, new Dictionary<string, object> { ["example.setting"] = "value" },
                 ContextSnapshot.Create(platform), "example-device-id", "example-user-id", 1711234567890, "example-play",
                 new TestingFloorRecording("example-recording", 42, true), seq: 7, keyframe: true, kind: RecordKind.State);

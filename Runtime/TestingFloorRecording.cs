@@ -71,13 +71,34 @@ namespace TestingFloorSdk {
 
         internal static TestingFloorRecording Discover() {
             if (DiscoveryForTesting != null) return DiscoveryForTesting();
-            // A new editor handoff takes precedence over an argument from editor startup.
-            var candidate = Application.isEditor ? ResolveFromSidecar() ?? ResolveFromArgs() : ResolveFromArgs() ?? ResolveFromSidecar();
-            if (Application.isEditor && candidate != null && candidate.EditorPid > 0) {
-                using var process = System.Diagnostics.Process.GetCurrentProcess();
-                if (candidate.EditorPid != process.Id) return null;
+            var processId = Application.isEditor ? EditorProcessId : 0;
+            return Choose(ForEditor(ResolveFromSidecar(), processId), () => ForEditor(ResolveFromArgs(), processId));
+        }
+
+        static int s_editorProcessId;
+
+        static int EditorProcessId {
+            get {
+                if (s_editorProcessId == 0) {
+                    using var process = System.Diagnostics.Process.GetCurrentProcess();
+                    s_editorProcessId = process.Id;
+                }
+                return s_editorProcessId;
             }
-            return candidate;
+        }
+
+        // In an editor (a nonzero process id), a handoff naming another editor process belongs to that editor.
+        internal static TestingFloorRecording ForEditor(TestingFloorRecording recording, int editorProcessId) {
+            if (editorProcessId == 0 || recording == null || recording.EditorPid <= 0) return recording;
+            return recording.EditorPid == editorProcessId ? recording : null;
+        }
+
+        // A versioned lease sidecar wins even once its lease expires, so expiry suspends the
+        // association instead of reviving an older launch argument. Otherwise a valid launch
+        // argument wins over a legacy sidecar.
+        internal static TestingFloorRecording Choose(TestingFloorRecording sidecar, Func<TestingFloorRecording> launchArgument) {
+            if (sidecar != null && sidecar.LeaseVersion != 0) return sidecar;
+            return launchArgument() ?? sidecar;
         }
 
         internal static void UseForTesting(TestingFloorRecording recording) {

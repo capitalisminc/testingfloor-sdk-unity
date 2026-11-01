@@ -1,5 +1,48 @@
 # Changelog
 
+## 0.5.0
+
+### Added
+
+- The package tests its payloads against an unedited copy of the Testing Floor
+  telemetry contract in `Tests/Contract`. EditMode tests fail when a field name,
+  type, record name or limit drifts from it.
+- `$tf.editor` is `true` for records from Play Mode in the Editor and `false` in
+  builds, so editor runs can be told apart from players' runs.
+- `TestingFloor.RegisterEventProcessor` registers a final pass over each event's
+  merged properties, before it is queued. `ContextSnapshot` gains `TryGetValue`,
+  `Remove` and `Keys` so a processor can read and change them.
+- `TestingFloor.SetState` accepts string arrays and integer arrays, like a state
+  provider.
+- `TestingFloor.SetUserId` and `SetDeviceId` send your game's own ids as
+  `$user_id` and `$device_id` instead of the generated ones.
+
+### Changed
+
+- `$tf.os` is the operating system family (`Windows`, `macOS`, `Linux`, `iOS`,
+  `Android`, `tvOS`, `visionOS`, `Web`, `PlayStation`, `Xbox`, `Switch`), not
+  Unity's platform name such as `WindowsPlayer` or `OSXEditor`. Other platforms
+  still send Unity's name.
+- `$tf.locale` is a BCP 47 tag such as `en-US`, not a language name such as
+  `English`. When the region is unknown it is a language-only tag, and when the
+  language is unknown it is left out.
+- `$time` and `$sent_at` have exactly three fractional digits and a `Z` suffix,
+  for example `2026-04-19T18:32:00.000Z`, instead of seven digits and `+00:00`.
+- `Track` refuses event names that begin with `$tf_`, in any casing. It logs one
+  warning per name and counts the event in `DroppedEventCount`. It does not count
+  it toward a recording's `dropped_events` or start a keyframe. Earlier versions
+  sent such events, which Testing Floor could mistake for its own records.
+- A valid `--testing-floor` launch argument now wins over a handoff file without
+  a recording lease in the Editor too, as it already did in builds and in the
+  Unreal SDK. A handoff file with a lease still wins, even after the lease
+  expires. A handoff file written for another editor process no longer hides the
+  launch argument.
+- The recording completion marker carries the same `$tf` context as other
+  records. Before, it could leave out the platform fields when no event had been
+  sent yet.
+- With the new array overloads, `SetState(key, null)` no longer compiles because
+  the type is ambiguous. Use `ClearState(key)` or cast the null.
+
 ## 0.4.3
 
 ### Fixed

@@ -21,6 +21,7 @@ namespace TestingFloorSdk.Internal {
         static List<TelemetryEvent> _activeBatch;
         static bool _requestInFlight;
         static int _dropped;
+        static int _refused;
         static Dictionary<string, int> _recordingDropped = new(StringComparer.Ordinal);
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
@@ -37,12 +38,16 @@ namespace TestingFloorSdk.Internal {
                 _activeBatch = null;
                 _requestInFlight = false;
                 _dropped = 0;
+                _refused = 0;
                 _recordingDropped = new Dictionary<string, int>(StringComparer.Ordinal);
             }
         }
 
         internal static int PendingEventCount { get { lock (QueueLock) return _pending.Count + _inFlight; } }
-        internal static int DroppedEventCount { get { lock (QueueLock) return _dropped; } }
+        internal static int DroppedEventCount { get { lock (QueueLock) return _dropped + _refused; } }
+        // Records lost after the SDK made them. Readers recover from these at the next keyframe;
+        // refused game events were never records, so they do not count.
+        internal static int LostRecordCount { get { lock (QueueLock) return _dropped; } }
         public static bool HasPending() => PendingEventCount > 0;
 
         public static Dictionary<string, object> RentProperties() {
@@ -60,6 +65,11 @@ namespace TestingFloorSdk.Internal {
         static void Release(TelemetryEvent ev) {
             ReturnProperties(ev.EventProperties);
             ReturnProperties(ev.Context.Properties);
+        }
+
+        // Game events refused before they became records, such as reserved $tf_ names.
+        internal static void CountRefused() {
+            lock (QueueLock) _refused++;
         }
 
         // Records lost before they reach the queue, such as object removals beyond the retry backlog.

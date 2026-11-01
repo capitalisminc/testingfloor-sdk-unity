@@ -9,15 +9,26 @@ namespace TestingFloorSdk.Internal {
 
         static string _deviceId;
         static string _profileId;
+        static string _gameDeviceId;
+        static string _gameUserId;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
-        static void ResetStatics() {
+        internal static void ResetStatics() {
             _deviceId = null;
             _profileId = null;
+            _gameDeviceId = null;
+            _gameUserId = null;
         }
+
+        // An id the game sets wins over the generated one; null or blank restores it.
+        internal static void SetGameUserId(string userId) => _gameUserId = GameId(userId);
+        internal static void SetGameDeviceId(string deviceId) => _gameDeviceId = GameId(deviceId);
+
+        static string GameId(string value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
         public static string DeviceId {
             get {
+                if (_gameDeviceId != null) return _gameDeviceId;
                 if (!string.IsNullOrWhiteSpace(_deviceId)) return _deviceId;
                 _deviceId = GetOrCreateDeviceId();
                 return _deviceId;
@@ -26,6 +37,7 @@ namespace TestingFloorSdk.Internal {
 
         public static string ProfileId {
             get {
+                if (_gameUserId != null) return _gameUserId;
                 if (!string.IsNullOrWhiteSpace(_profileId)) return _profileId;
                 _profileId = GetOrCreateProfileId();
                 return _profileId;
