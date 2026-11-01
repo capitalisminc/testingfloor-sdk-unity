@@ -144,6 +144,7 @@ namespace TestingFloorSdk.Internal {
             if (!string.IsNullOrWhiteSpace(p.UnityVersion)) {
                 writer.WriteString("engine", $"Unity {p.UnityVersion}");
             }
+            writer.WriteBoolean("editor", p.Editor);
             if (p.ScreenWidth > 0) writer.WriteNumber("screen_width", p.ScreenWidth);
             if (p.ScreenHeight > 0) writer.WriteNumber("screen_height", p.ScreenHeight);
             WriteString(writer, "locale", p.Locale);

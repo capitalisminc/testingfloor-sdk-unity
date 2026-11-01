@@ -14,6 +14,8 @@ namespace TestingFloorSdk {
         internal const string StateRecordName = "$tf_state";
         internal const string ObjectsRecordName = "$tf_objects";
         internal const string TelemetryCompleteRecordName = "$tf_telemetry_complete";
+        // The telemetry contract reserves event names with this prefix for the SDK's own records.
+        internal const string ReservedEventPrefix = "$tf_";
         const string LevelKeyPrefix = "game_level.";
 
         static TestingFloorSettings _settings;
@@ -21,6 +23,8 @@ namespace TestingFloorSdk {
         static Func<TestingFloorSettings, IBlockingBatchSender> s_clientFactoryForTesting;
         static ITelemetryContextProvider _contextProvider;
         static ITelemetryContextProvider _stateProvider;
+        static ITelemetryContextProvider _eventProcessor;
+        static readonly HashSet<string> s_warnedReservedNames = new(StringComparer.Ordinal);
         static Dictionary<string, object> _directState = new(StringComparer.Ordinal);
         static SessionStateTracker _stateTracker = new();
         static ObjectTracker _objects = new();
@@ -67,6 +71,8 @@ namespace TestingFloorSdk {
             s_clientFactoryForTesting = null;
             _contextProvider = null;
             _stateProvider = null;
+            _eventProcessor = null;
+            s_warnedReservedNames.Clear();
             _directState = new Dictionary<string, object>(StringComparer.Ordinal);
             _stateTracker = new SessionStateTracker();
             _objects = new ObjectTracker();
@@ -186,11 +192,24 @@ namespace TestingFloorSdk {
             _stateProvider = provider;
         }
 
-        /// <summary>Sets one session state value directly. A null string clears the key.</summary>
+        /// <summary>
+        /// Registers a final pass over each event's properties, after context,
+        /// player and camera values and the event's own properties are merged
+        /// and before the event is queued. The snapshot holds the merged
+        /// properties: read, change or remove them, for example to convert a
+        /// game's coordinate frame. Pass null to clear it.
+        /// </summary>
+        public static void RegisterEventProcessor(ITelemetryContextProvider processor) {
+            _eventProcessor = processor;
+        }
+
+        /// <summary>Sets one session state value directly. A null string or array clears the key. Arrays are copied.</summary>
         public static void SetState(string key, string value) => PutState(key, value);
         public static void SetState(string key, long value) => PutState(key, value);
         public static void SetState(string key, double value) => PutState(key, value);
         public static void SetState(string key, bool value) => PutState(key, value);
+        public static void SetState(string key, string[] value) => PutState(key, value);
+        public static void SetState(string key, int[] value) => PutState(key, value);
 
         /// <summary>Clears a value set with <c>SetState</c>. The next state record sends it as null.</summary>
         public static void ClearState(string key) {
@@ -204,6 +223,7 @@ namespace TestingFloorSdk {
                 return;
             }
             if (value is double d && (double.IsNaN(d) || double.IsInfinity(d))) return;
+            if (value is Array array) value = array.Clone();
             _directState[key] = value;
         }
 
@@ -349,19 +369,35 @@ namespace TestingFloorSdk {
 
         /// <summary>
         /// A random id the SDK creates on first launch and keeps in
-        /// <c>PlayerPrefs</c>. Sent on every event as <c>$device_id</c>.
-        /// Testing Floor shows it as the Player ID only when an event has no
-        /// <see cref="ProfileId"/>.
+        /// <c>PlayerPrefs</c>, or the id set with <see cref="SetDeviceId"/>.
+        /// Sent on every event as <c>$device_id</c>. Testing Floor shows it as
+        /// the Player ID only when an event has no <see cref="ProfileId"/>.
         /// </summary>
         public static string DeviceId => Identity.DeviceId;
 
         /// <summary>
         /// A random id the SDK creates on first use and keeps in
-        /// <c>{Application.persistentDataPath}/synced/profile_id</c>. Sent on
-        /// every event as <c>$user_id</c>; Testing Floor shows it as the
-        /// Player ID. Null if the SDK can't read or write that file.
+        /// <c>{Application.persistentDataPath}/synced/profile_id</c>, or the id
+        /// set with <see cref="SetUserId"/>. Sent on every event as
+        /// <c>$user_id</c>; Testing Floor shows it as the Player ID. Null if
+        /// the SDK can't read or write that file.
         /// </summary>
         public static string ProfileId => Identity.ProfileId;
+
+        /// <summary>
+        /// Sends your game's own player id, such as an account id, as
+        /// <c>$user_id</c> instead of the generated profile id. Null or blank
+        /// restores the generated id. Records captured after the call use it.
+        /// The SDK does not save it; set it again on each launch.
+        /// </summary>
+        public static void SetUserId(string userId) => Identity.SetGameUserId(userId);
+
+        /// <summary>
+        /// Sends your own installation id as <c>$device_id</c> instead of the
+        /// generated one. Null or blank restores the generated id. The SDK does
+        /// not save it; set it again on each launch.
+        /// </summary>
+        public static void SetDeviceId(string deviceId) => Identity.SetGameDeviceId(deviceId);
 
         /// <summary>
         /// The Player ID that Testing Floor shows for this player:
@@ -407,6 +443,11 @@ namespace TestingFloorSdk {
         public static string CollectionReason { get { EnsureInitialized(); return _collectionReason; } }
 
         internal static bool TrackEventInternal(string eventType, Dictionary<string, object> eventProperties) {
+            if (eventType != null && eventType.StartsWith(ReservedEventPrefix, StringComparison.OrdinalIgnoreCase)) {
+                RefuseReservedName(eventType);
+                TelemetryQueue.ReturnProperties(eventProperties);
+                return false;
+            }
             if (!IsCollecting) {
                 TelemetryQueue.ReturnProperties(eventProperties);
                 return false;
@@ -428,6 +469,10 @@ namespace TestingFloorSdk {
 
 
             var context = BuildContext();
+            if (_eventProcessor != null) {
+                ProcessEvent(ref context, eventProperties);
+                eventProperties = null;
+            }
             RememberLevel(context.Properties, eventProperties);
             var timestampMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
 
@@ -447,6 +492,34 @@ namespace TestingFloorSdk {
 
         static string UserId => !string.IsNullOrWhiteSpace(Identity.ProfileId) ? Identity.ProfileId : null;
 
+        // Games must not send platform record names. Warn once per name; a refused event counts as
+        // dropped while collecting, but never against a recording.
+        static void RefuseReservedName(string eventType) {
+            if (s_warnedReservedNames.Add(eventType)) {
+                Debug.LogWarning($"[TestingFloor] Ignoring event '{eventType}': names beginning with {ReservedEventPrefix} are reserved for Testing Floor records.");
+            }
+            if (IsCollecting) TelemetryQueue.CountRefused();
+        }
+
+        // Event properties win over context, then the processor sees the merged snapshot.
+        static void ProcessEvent(ref ContextSnapshot context, Dictionary<string, object> eventProperties) {
+            if (eventProperties != null) {
+                if (eventProperties.Count > 0) {
+                    context.Properties ??= TelemetryQueue.RentProperties();
+                    foreach (var kvp in eventProperties) context.Properties[kvp.Key] = kvp.Value;
+                }
+                TelemetryQueue.ReturnProperties(eventProperties);
+            }
+            try {
+                _eventProcessor.FillSnapshot(ref context);
+            }
+            catch (Exception ex) {
+                if (_settings != null && _settings.logErrors) {
+                    Debug.LogWarning($"[TestingFloor] Event processor threw: {ex}");
+                }
+            }
+        }
+
         /// <summary>Called every frame by the session driver, in unscaled time.</summary>
         internal static void Tick(double now) {
             if (!IsCollecting) return;
@@ -454,7 +527,7 @@ namespace TestingFloorSdk {
 
             if (now >= _nextStatePollAt) {
                 _nextStatePollAt = now + StatePollIntervalSeconds;
-                var dropped = TelemetryQueue.DroppedEventCount;
+                var dropped = TelemetryQueue.LostRecordCount;
                 if (dropped != _droppedSeen) {
                     // Readers recover from a lost record at the next keyframe.
                     _droppedSeen = dropped;
@@ -813,7 +886,7 @@ namespace TestingFloorSdk {
 
         internal static void EnqueueRecordingCompletion(TestingFloorRecording recording, string session) {
             var marker = new TelemetryEvent(TelemetryCompleteRecordName, new Dictionary<string, object> { ["interrupted"] = recording.Interrupted },
-                ContextSnapshot.Create(_platformContext), Identity.DeviceId, Identity.ProfileId,
+                ContextSnapshot.Create(CurrentPlatform()), Identity.DeviceId, UserId,
                 DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), session, recording, seq: _seq + 1);
             Enqueue(marker);
         }

@@ -1,6 +1,7 @@
 using System;
 using System.Buffers;
 using System.Buffers.Text;
+using System.Globalization;
 using System.Text;
 
 namespace TestingFloorSdk.Internal {
@@ -68,12 +69,13 @@ namespace TestingFloorSdk.Internal {
             WriteByte((byte)'"');
         }
 
+        // ISO 8601 in UTC with exactly milliseconds and Z, such as 2026-04-19T18:32:00.000Z.
         public void WriteString(string key, DateTimeOffset value) {
             WritePropertyName(key);
             BeforeValue();
             WriteByte((byte)'"');
             Span<char> chars = stackalloc char[40];
-            if (!value.TryFormat(chars, out var charsWritten, "O")) {
+            if (!value.UtcDateTime.TryFormat(chars, out var charsWritten, "yyyy'-'MM'-'dd'T'HH':'mm':'ss'.'fff'Z'", CultureInfo.InvariantCulture)) {
                 throw new InvalidOperationException("Failed to format DateTimeOffset.");
             }
             WriteUtf8(chars.Slice(0, charsWritten));
