@@ -9,6 +9,8 @@ using Debug = UnityEngine.Debug;
 namespace TestingFloorSdk.Internal {
     internal static class TelemetryQueue {
         const int MaxPooledDictionaries = 64;
+        // The collector accepts at most this many events in one request.
+        internal const int MaxBatchEvents = 2000;
         static readonly object QueueLock = new();
         static Queue<TelemetryEvent> _pending = new();
         static Stack<Dictionary<string, object>> _pool = new();
@@ -91,14 +93,14 @@ namespace TestingFloorSdk.Internal {
 
         public static bool Enqueue(TelemetryEvent ev, TestingFloorSettings settings, Func<IBatchSender> clientFactory, Action<SendResult> onResult) {
             lock (QueueLock) {
-                if (ev.EventType != "$tf_telemetry_complete" && _pending.Count + _inFlight >= Math.Max(1, settings != null ? settings.queueMaxEvents : 4096)) {
+                if (ev.EventType != TestingFloor.TelemetryCompleteRecordName && _pending.Count + _inFlight >= Math.Max(1, settings != null ? settings.queueMaxEvents : 4096)) {
                     Release(ev);
                     _dropped++;
                     if (CollectorClient.IsRecordingGameplay(ev)) AddRecordingDrops(ev.Recording, ev.SessionId, 1);
                     return false;
                 }
                 _pending.Enqueue(ev);
-                if (ev.EventType == "$tf_telemetry_complete") _flushRequested = true;
+                if (ev.EventType == TestingFloor.TelemetryCompleteRecordName) _flushRequested = true;
             }
             EnsureSenderRunning(clientFactory, onResult, settings);
             return true;
@@ -159,13 +161,13 @@ namespace TestingFloorSdk.Internal {
             }
             while (_pending.Count > 0 && DateTime.UtcNow < deadline) {
                 var batch = new List<TelemetryEvent>();
-                var maximum = Math.Clamp(settings != null ? settings.batchMaxEvents : 50, 1, 2000);
+                var maximum = Math.Clamp(settings != null ? settings.batchMaxEvents : 50, 1, MaxBatchEvents);
                 while (batch.Count < maximum && _pending.Count > 0) {
-                    if (batch.Count > 0 && (_pending.Peek().EventType == "$tf_telemetry_complete" || !SameAssociation(batch[0], _pending.Peek()))) break;
+                    if (batch.Count > 0 && (_pending.Peek().EventType == TestingFloor.TelemetryCompleteRecordName || !SameAssociation(batch[0], _pending.Peek()))) break;
                     var next = _pending.Dequeue();
-                    if (next.EventType == "$tf_telemetry_complete") next.EventProperties["dropped_events"] = RecordingDrops(next);
+                    if (next.EventType == TestingFloor.TelemetryCompleteRecordName) next.EventProperties["dropped_events"] = RecordingDrops(next);
                     batch.Add(next);
-                    if (next.EventType == "$tf_telemetry_complete") break;
+                    if (next.EventType == TestingFloor.TelemetryCompleteRecordName) break;
                 }
                 var outcome = sender.TrackBatchBlocking(batch, deadline);
                 ApplyOutcome(batch, outcome);
@@ -188,23 +190,23 @@ namespace TestingFloorSdk.Internal {
             try {
                 while (!lifetime.IsCancellationRequested) {
                     batch.Clear();
-                    var maximum = Math.Clamp(settings != null ? settings.batchMaxEvents : 50, 1, 2000);
+                    var maximum = Math.Clamp(settings != null ? settings.batchMaxEvents : 50, 1, MaxBatchEvents);
                     var interval = settings != null ? settings.batchMaxFlushIntervalSeconds : 0.25f;
                     if (float.IsNaN(interval) || float.IsInfinity(interval)) interval = 0.25f;
                     var clock = Stopwatch.StartNew();
                     while (true) {
                         lock (QueueLock) {
                             while (batch.Count < maximum && _pending.Count > 0) {
-                                if (batch.Count > 0 && (_pending.Peek().EventType == "$tf_telemetry_complete" || !SameAssociation(batch[0], _pending.Peek()))) break;
+                                if (batch.Count > 0 && (_pending.Peek().EventType == TestingFloor.TelemetryCompleteRecordName || !SameAssociation(batch[0], _pending.Peek()))) break;
                                 var next = _pending.Dequeue();
-                                if (next.EventType == "$tf_telemetry_complete") next.EventProperties["dropped_events"] = RecordingDrops(next);
+                                if (next.EventType == TestingFloor.TelemetryCompleteRecordName) next.EventProperties["dropped_events"] = RecordingDrops(next);
                                 batch.Add(next);
-                                if (next.EventType == "$tf_telemetry_complete") break;
+                                if (next.EventType == TestingFloor.TelemetryCompleteRecordName) break;
                             }
                             _activeBatch = batch;
                             _inFlight = batch.Count;
                         }
-                        if ((batch.Count > 0 && batch[0].EventType == "$tf_telemetry_complete") || batch.Count >= maximum || _flushRequested || clock.Elapsed.TotalSeconds >= Math.Max(0, interval)) break;
+                        if ((batch.Count > 0 && batch[0].EventType == TestingFloor.TelemetryCompleteRecordName) || batch.Count >= maximum || _flushRequested || clock.Elapsed.TotalSeconds >= Math.Max(0, interval)) break;
                         await Task.Delay(10, lifetime);
                     }
                     if (batch.Count == 0) return;

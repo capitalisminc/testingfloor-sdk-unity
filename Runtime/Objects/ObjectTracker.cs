@@ -401,7 +401,7 @@ namespace TestingFloorSdk.Internal {
     /// most 300 samples and stays well inside the collector's event size cap.
     /// </summary>
     internal sealed class ObjectRecordBuilder {
-        const int RecordByteBudget = 20 * 1024;
+        internal const int RecordByteBudget = 20 * 1024;
         const int CoordinateBytes = 12;
         const int NumberBytes = 25;
 
