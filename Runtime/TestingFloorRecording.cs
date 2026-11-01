@@ -71,13 +71,26 @@ namespace TestingFloorSdk {
 
         internal static TestingFloorRecording Discover() {
             if (DiscoveryForTesting != null) return DiscoveryForTesting();
-            var sidecar = ResolveFromSidecar();
-            // A sidecar written for another editor process belongs to that editor.
-            if (Application.isEditor && sidecar != null && sidecar.EditorPid > 0) {
-                using var process = System.Diagnostics.Process.GetCurrentProcess();
-                if (sidecar.EditorPid != process.Id) sidecar = null;
+            var processId = Application.isEditor ? EditorProcessId : 0;
+            return Choose(ForEditor(ResolveFromSidecar(), processId), () => ForEditor(ResolveFromArgs(), processId));
+        }
+
+        static int s_editorProcessId;
+
+        static int EditorProcessId {
+            get {
+                if (s_editorProcessId == 0) {
+                    using var process = System.Diagnostics.Process.GetCurrentProcess();
+                    s_editorProcessId = process.Id;
+                }
+                return s_editorProcessId;
             }
-            return Choose(sidecar, ResolveFromArgs);
+        }
+
+        // In an editor (a nonzero process id), a handoff naming another editor process belongs to that editor.
+        internal static TestingFloorRecording ForEditor(TestingFloorRecording recording, int editorProcessId) {
+            if (editorProcessId == 0 || recording == null || recording.EditorPid <= 0) return recording;
+            return recording.EditorPid == editorProcessId ? recording : null;
         }
 
         // A versioned lease sidecar wins even once its lease expires, so expiry suspends the
