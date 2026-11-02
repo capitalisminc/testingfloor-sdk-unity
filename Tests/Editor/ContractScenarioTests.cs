@@ -41,7 +41,7 @@ namespace TestingFloorSdk.Tests.Editor {
             RecordingTelemetry.ResetStatics();
             foreach (var directory in _directories) {
                 if (!Directory.Exists(directory)) continue;
-                chmod(directory, Convert.ToUInt32("755", 8));
+                SetWritable(directory, true);
                 Directory.Delete(directory, true);
             }
             _directories.Clear();
@@ -145,7 +145,7 @@ namespace TestingFloorSdk.Tests.Editor {
                         break;
                     case "create_file":
                         // The desktop app can always write in its own directory.
-                        chmod(directory, Convert.ToUInt32("755", 8));
+                        SetWritable(directory, true);
                         File.WriteAllText(Path.Combine(directory, (string)value), "{}");
                         break;
                     case "track":
@@ -210,14 +210,14 @@ namespace TestingFloorSdk.Tests.Editor {
             }
         }
 
-        /// <summary>Every expected field must match; a null expectation means the field is absent.</summary>
+        /// <summary>Every expected field must match. A null expectation means the field is absent, not present as JSON null.</summary>
         static void Match(Dictionary<string, object> actual, Dictionary<string, object> expected, string path, Func<string, string> substituted, List<string> problems) {
             foreach (var field in expected) {
                 var name = $"{path}.{field.Key}";
                 object found = null;
-                var present = actual != null && actual.TryGetValue(field.Key, out found) && found != null;
+                var present = actual != null && actual.TryGetValue(field.Key, out found);
                 if (field.Value == null) {
-                    if (present) problems.Add($"{name} should be absent");
+                    if (present) problems.Add($"{name} should be absent, but is {Write(found)}");
                 }
                 else if (!present) {
                     problems.Add($"{name} is missing");
@@ -313,9 +313,18 @@ namespace TestingFloorSdk.Tests.Editor {
         [DllImport("libc", SetLastError = true)]
         static extern int chmod(string path, uint mode);
 
+        // libc's chmod exists only on macOS and Linux. Elsewhere every directory stays writable, and
+        // the scenario that needs an unwritable one is skipped.
+        static bool CanChangePermissions =>
+            Environment.OSVersion.Platform == PlatformID.Unix || Environment.OSVersion.Platform == PlatformID.MacOSX;
+
+        static void SetWritable(string directory, bool writable) {
+            if (CanChangePermissions) chmod(directory, Convert.ToUInt32(writable ? "755" : "555", 8));
+        }
+
         static bool MakeUnwritable(string directory) {
-            if (Environment.OSVersion.Platform != PlatformID.Unix && Environment.OSVersion.Platform != PlatformID.MacOSX) return false;
-            chmod(directory, Convert.ToUInt32("555", 8));
+            if (!CanChangePermissions) return false;
+            SetWritable(directory, false);
             try {
                 File.WriteAllText(Path.Combine(directory, "probe"), "");
                 return false;

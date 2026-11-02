@@ -26,6 +26,7 @@ REPOSITORY = "https://github.com/capitalisminc/testingfloor-sdk-contract"
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 TARGET = ROOT / "Tests" / "Contract"
 SOURCE = ROOT / "Tests" / "contract-source.json"
+REQUIRED = ("telemetry_contract.json", "SDK_CONTRACT.md", "scenarios/README.md")
 FILE_META = """fileFormatVersion: 2
 guid: {guid}
 TextScriptImporter:
@@ -68,7 +69,15 @@ def write_meta(path, template, kept):
     meta.write_text(kept.get(relative) or template.format(guid=uuid.uuid4().hex))
 
 
+def require_contract(published):
+    """Refuse a folder that is not a contract before the existing copy is removed."""
+    missing = [name for name in REQUIRED if not (published / name).is_file()]
+    if missing:
+        raise SystemExit(f"{published} is not an SDK contract folder: it has no {', '.join(missing)}. Tests/Contract is unchanged.")
+
+
 def replace(published):
+    require_contract(published)
     kept = {meta.relative_to(TARGET): meta.read_text() for meta in TARGET.rglob("*.meta")} if TARGET.exists() else {}
     shutil.rmtree(TARGET, ignore_errors=True)
     for path in files(published):
