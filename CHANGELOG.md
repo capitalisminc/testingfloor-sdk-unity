@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.8.0
+
+- Add immutable build identity and recording-only collection in built games.
+- Add one optional output coordinate space for standard events, object samples, directions and lengths.
+- Namespace automatic movement and teleport events under `$tf_`; update filters for the old automatic names.
+
+
 ## 0.7.0 — 2026-11-02
 
 ### Changed

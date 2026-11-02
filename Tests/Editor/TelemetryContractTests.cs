@@ -209,7 +209,7 @@ namespace TestingFloorSdk.Tests.Editor {
 
             var poseKeys = Properties(Wire(First("example_event")));
             var sdkEvents = _records.Select(record => record.EventType)
-                .Where(type => !type.StartsWith("$", StringComparison.Ordinal) && type != "example_event").Distinct();
+                .Where(type => (type == "$tf_player_moved" || type == "$tf_player_teleported" || !type.StartsWith("$", StringComparison.Ordinal)) && type != "example_event").Distinct();
             var contractEvents = TelemetryContract.Keys(TelemetryContract.Rows("sdk_events"), "name");
             CollectionAssert.AreEquivalent(contractEvents, sdkEvents);
 

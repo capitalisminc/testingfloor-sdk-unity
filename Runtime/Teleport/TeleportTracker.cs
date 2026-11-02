@@ -4,7 +4,7 @@ using UnityEngine;
 
 namespace TestingFloorSdk {
     internal static class TeleportTracker {
-        const string TeleportEventName = "player_teleported";
+        const string TeleportEventName = "$tf_player_teleported";
         const string TeleportKindKey = "teleport.kind";
         const string TeleportReasonKey = "teleport.reason";
         const string TeleportDurationKey = "teleport.duration";
@@ -58,7 +58,7 @@ namespace TestingFloorSdk {
 
             var distance = Vector3.Distance(start, end);
 
-            var builder = global::TestingFloorSdk.TestingFloor.Track(TeleportEventName)
+            var builder = global::TestingFloorSdk.TestingFloor.TrackSdkEvent(TeleportEventName)
                 .Set(TeleportKindKey, "teleport")
                 .Set(TeleportDurationKey, Math.Max(0.0, durationSeconds))
                 .Set(TeleportDistanceKey, (double)distance)

@@ -4,7 +4,7 @@ using UnityEngine;
 namespace TestingFloorSdk {
     [DisallowMultipleComponent]
     internal sealed class MovementTracker : MonoBehaviour {
-        const string MovementEventName = "player_moved";
+        const string MovementEventName = "$tf_player_moved";
         const string MovementReasonKey = "movement.reason";
         const string MovementDistanceKey = "movement.distance";
         const string MovementDurationKey = "movement.duration";
@@ -79,7 +79,7 @@ namespace TestingFloorSdk {
         }
 
         internal static void TrackMovementEvent(MovementEvent ev) {
-            var builder = global::TestingFloorSdk.TestingFloor.Track(MovementEventName)
+            var builder = global::TestingFloorSdk.TestingFloor.TrackSdkEvent(MovementEventName)
                 .Set(MovementReasonKey, ev.Reason);
             if (ev.Distance > 0f) {
                 builder = builder.Set(MovementDistanceKey, (double)ev.Distance);

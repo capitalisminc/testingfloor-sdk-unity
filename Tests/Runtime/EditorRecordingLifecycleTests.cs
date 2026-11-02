@@ -59,6 +59,27 @@ namespace TestingFloorSdk.Tests {
         TelemetryEvent[] Completions() => _records.Where(record => record.EventType == "$tf_telemetry_complete").ToArray();
 
         [Test]
+        public void BuiltGameRecordingOnlyWaitsAndResumesWithoutLosingDormantObjects() {
+            _settings.recordingOnly = true;
+            TestingFloor.ConfigureRecordingLifecycleForTesting(_settings, () => _candidate, () => _now,
+                ev => { _records.Add(ev); return true; }, editor: false);
+            Assert.IsFalse(TestingFloor.IsCollecting);
+            Assert.AreEqual("recording_required", TestingFloor.CollectionReason);
+            TestingFloor.TrackObject("crate", () => Vector3.one, "example-crate");
+            _candidate = Lease("example-recording");
+            TestingFloor.RefreshRecordingContext(force: true);
+            Assert.IsTrue(TestingFloor.IsCollecting);
+            TestingFloor.Tick(0);
+            Assert.IsTrue(_records.Exists(record => record.EventType == "$tf_objects"));
+            _candidate.TelemetryRequested = false;
+            TestingFloor.RefreshRecordingContext(force: true);
+            Assert.IsFalse(TestingFloor.IsCollecting);
+            _candidate.TelemetryRequested = true;
+            TestingFloor.RefreshRecordingContext(force: true);
+            Assert.IsTrue(TestingFloor.IsCollecting);
+        }
+
+        [Test]
         public void AttachesDuringExistingPlayAndKeepsSuccessiveRecordingsSeparate() {
             Assert.IsFalse(TestingFloor.IsCollecting);
             Assert.IsFalse(TestingFloor.Track("before_recording").Send());
