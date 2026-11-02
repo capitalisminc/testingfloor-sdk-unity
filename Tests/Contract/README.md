@@ -1,14 +1,29 @@
-# Telemetry contract
+# Testing Floor SDK contract
 
-`telemetry_contract.json` is a verbatim copy of the Testing Floor telemetry
-contract. It names every wire field, record, SDK property and limit that the
-collector, the SDKs and Testing Floor agree on. The EditMode tests in
-`Tests/Editor/TelemetryContractTests.cs` compare what this SDK sends with it.
+These files define what every Testing Floor game SDK sends and how it behaves.
+The Unity and Unreal SDKs, and any SDK for another engine, follow them.
 
-Do not edit the copy here. To refresh it:
+| File | What it holds |
+| --- | --- |
+| `telemetry_contract.json` | Wire field names, record names, value types and limits. |
+| `SDK_CONTRACT.md` | Shared behavior: recording handoff, editor policy, delivery, retries, context. |
+| `scenarios/` | Machine-readable checks of that behavior. Each SDK runs them in its own tests. See [scenarios/README.md](scenarios/README.md). |
 
-1. Replace `telemetry_contract.json` with the current published contract,
-   unchanged. Keep its `.meta` file.
-2. Run the EditMode tests.
-3. If a test fails, the SDK and the contract disagree. Change the SDK to match,
-   or, if the contract is wrong, get it fixed in the contract and copy it again.
+## Where to change it
+
+Testing Floor publishes these files to
+[capitalisminc/testingfloor-sdk-contract](https://github.com/capitalisminc/testingfloor-sdk-contract)
+from its main repository on every change. That repository is a read-only copy.
+Changes are made in Testing Floor's main repository, together with the collector
+or app change that needs them.
+
+## How an SDK uses it
+
+Each SDK keeps an unedited copy of the whole folder with its tests, and records
+the published commit it came from. To refresh the copy, run the SDK's update
+script, then run its tests. When a test fails, either the SDK is wrong, or the
+contract is wrong and needs a change here first. Never edit the copy in an SDK
+to make a test pass.
+
+An SDK for a new engine can start from these files: implement the wire format in
+`telemetry_contract.json`, then write a runner for the scenarios.

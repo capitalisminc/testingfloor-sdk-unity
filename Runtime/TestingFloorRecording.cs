@@ -71,9 +71,16 @@ namespace TestingFloorSdk {
 
         internal static TestingFloorRecording Discover() {
             if (DiscoveryForTesting != null) return DiscoveryForTesting();
-            var processId = Application.isEditor ? EditorProcessId : 0;
-            return Choose(ForEditor(ResolveFromSidecar(), processId), () => ForEditor(ResolveFromArgs(), processId));
+            return Resolve(SidecarText(), LaunchArgumentText(), Application.isEditor ? EditorProcessId : 0);
         }
+
+        /// <summary>
+        /// The recording a handoff names: the sidecar's text, the JSON after <c>--testing-floor=</c>
+        /// (either may be null), and the editor's process ID, or 0 in a built game.
+        /// </summary>
+        internal static TestingFloorRecording Resolve(string sidecar, string launchArgument, int editorProcessId) =>
+            Choose(ForEditor(TryParsePayload(sidecar, "sidecar payload"), editorProcessId),
+                () => ForEditor(TryParsePayload(launchArgument, "--testing-floor JSON"), editorProcessId));
 
         static int s_editorProcessId;
 
@@ -119,48 +126,39 @@ namespace TestingFloorSdk {
             }
         }
 
-        static TestingFloorRecording ResolveFromArgs() {
-            var args = Environment.GetCommandLineArgs();
-            for (var i = 0; i < args.Length; i++) {
-                var arg = args[i];
-                if (!arg.StartsWith(CliPrefix, StringComparison.Ordinal)) continue;
-                var json = arg.Substring(CliPrefix.Length);
+        static string LaunchArgumentText() {
+            foreach (var arg in Environment.GetCommandLineArgs()) {
+                if (arg.StartsWith(CliPrefix, StringComparison.Ordinal)) return arg.Substring(CliPrefix.Length);
+            }
+            return null;
+        }
+
+        // Intentionally does not delete the file. The recorder owns its lifetime and clears it
+        // when the recording stops, so every Play boot during the recording resolves the same context.
+        static string SidecarText() {
+            var paths = GetSidecarPaths();
+            if (paths == null) return null;
+            foreach (var path in paths) {
+                if (string.IsNullOrWhiteSpace(path) || !File.Exists(path)) continue;
                 try {
-                    return ParsePayload(json, "--testing-floor JSON");
+                    return File.ReadAllText(path);
                 }
                 catch (Exception e) {
-                    Debug.LogWarning($"[TestingFloor] Failed to parse --testing-floor JSON: {e.Message}");
-                    return null;
+                    Debug.LogWarning($"[TestingFloor] Failed to read sidecar payload '{path}': {e.Message}");
                 }
             }
             return null;
         }
 
-        static TestingFloorRecording ResolveFromSidecar() {
-            var paths = GetSidecarPaths();
-            if (paths == null || paths.Length == 0) return null;
-
-            for (var i = 0; i < paths.Length; i++) {
-                var path = paths[i];
-                if (string.IsNullOrWhiteSpace(path) || !File.Exists(path)) continue;
-
-                try {
-                    var json = File.ReadAllText(path);
-                    var recording = ParsePayload(json, "sidecar payload");
-                    if (recording == null) continue;
-
-                    // Intentionally NOT deleting the file. The recorder owns the
-                    // file's lifetime and clears it when the recording stops.
-                    // Keeping it lets every Play boot during this recording
-                    // resolve the same recorder context.
-                    return recording;
-                }
-                catch (Exception e) {
-                    Debug.LogWarning($"[TestingFloor] Failed to parse sidecar payload '{path}': {e.Message}");
-                }
+        static TestingFloorRecording TryParsePayload(string json, string label) {
+            if (json == null) return null;
+            try {
+                return ParsePayload(json, label);
             }
-
-            return null;
+            catch (Exception e) {
+                Debug.LogWarning($"[TestingFloor] Failed to parse {label}: {e.Message}");
+                return null;
+            }
         }
 
         internal static TestingFloorRecording ParsePayloadForTesting(string json) {

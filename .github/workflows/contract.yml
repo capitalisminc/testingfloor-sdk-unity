@@ -1,0 +1,17 @@
+name: SDK contract copy
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check-contract-copy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check that Tests/Contract matches the published contract
+        run: python3 "Tools~/update_contract.py" --check

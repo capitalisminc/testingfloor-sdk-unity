@@ -41,14 +41,27 @@ serialization types stay internal; expose only the API game integrations need.
 
 ## Change the SDK contract
 
-Wire field names, types and limits come from the Testing Floor telemetry
-contract. This package keeps an unedited copy at
-[Tests/Contract/telemetry_contract.json](Tests/Contract/telemetry_contract.json),
-and the EditMode contract tests compare the SDK's payloads with it. Do not edit
-the copy to make a test pass; [Tests/Contract/README.md](Tests/Contract/README.md)
-explains how to refresh it.
+`Tests/Contract` is an unedited copy of the published
+[Testing Floor SDK contract](https://github.com/capitalisminc/testingfloor-sdk-contract),
+which every Testing Floor SDK follows:
 
-Keep [SDK_CONTRACT.md](SDK_CONTRACT.md) identical to the public Unreal SDK copy.
-When changing identity, fields, defaults, limits, retry policy, or units, update
-both implementations and their observable regression tests. Bump the package and
-runtime version together. Document breaking changes without compatibility aliases.
+- `telemetry_contract.json` holds wire field names, types and limits. The EditMode
+  contract tests compare the SDK's payloads with it.
+- `SDK_CONTRACT.md` describes the shared behavior.
+- `scenarios/` checks that behavior. The EditMode `ContractScenarioTests` run each
+  file through the SDK's recording-lifecycle test hook, with a fake clock, a
+  temporary telemetry directory and a fake collector; `scenarios/README.md`
+  describes the format.
+
+`Tests/contract-source.json` records the published commit the copy came from.
+Refresh the copy with `python3 "Tools~/update_contract.py"`, which keeps existing
+`.meta` files and creates them for new files, then run the EditMode and PlayMode
+tests. `--check` confirms the copy still matches its recorded commit, and
+`--from <folder>` tries an unpublished change. Never edit the copy to make a test
+pass. Fix the SDK, or have the contract changed where it is published and copy it
+again.
+
+When changing identity, fields, defaults, limits, retry policy, or units, change
+the published contract first, with a scenario that shows it, then update the SDK
+and its observable regression tests. Bump the package and runtime version
+together. Document breaking changes without compatibility aliases.

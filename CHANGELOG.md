@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- The EditMode `ContractScenarioTests` run the shared SDK scenarios in
+  `Tests/Contract/scenarios`, one test per file. `Tests/Contract` now holds the
+  whole published SDK contract, including `SDK_CONTRACT.md`, and
+  `Tools~/update_contract.py` refreshes it.
+
 ## 0.6.0
 
 ### Added
