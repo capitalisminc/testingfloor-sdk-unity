@@ -17,6 +17,18 @@ namespace TestingFloorSdk.Tests.Editor {
         }
 
         [Test]
+        public void MovementIsOnByDefaultAndSamplesUpToTenTimesASecond() {
+            var settings = ScriptableObject.CreateInstance<TestingFloorSettings>();
+            try {
+                Assert.IsTrue(settings.movementTrackingEnabled, "movement samples feed the map's paths and heatmaps");
+                Assert.AreEqual(0.1f, settings.movementMinPingIntervalSeconds, 1e-6f, "a half-second jump gets several samples");
+            }
+            finally {
+                Object.DestroyImmediate(settings);
+            }
+        }
+
+        [Test]
         public void SettingsWithWriteKeyAreEnabledForRuntimeBuild() {
             var settings = ScriptableObject.CreateInstance<TestingFloorSettings>();
             try {

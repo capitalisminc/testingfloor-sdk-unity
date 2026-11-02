@@ -192,7 +192,6 @@ playerIdLabel.text = $"Player ID: {TestingFloor.PlayerId}";
 ```csharp
 TestingFloor.SetPositionSource(playerTransform);
 TestingFloor.UseMainCamera();
-TestingFloor.SetMovementTrackingEnabled(true);
 ```
 
 Every event includes available player/camera positions, camera rotation,
@@ -215,11 +214,14 @@ TestingFloor.SetCameraFocusSource(cameraPivot);
 many characters instead, don't point it at a selected one: leave it unset and
 track each character with `TrackObject`.
 
-Movement is opt-in and samples player or camera-only activity. `player_moved`
-reports `start`, `ping`, and `stop`, with nonzero distance, camera distance,
-rotation, FOV-change, orthographic width change, and duration metrics. Defaults target about two path
-samples per second. Configure thresholds in the settings asset rather than
-sending movement events every frame. Timing uses unscaled time during pause.
+Movement tracking is on by default and samples player or camera-only activity
+once a position or camera source is set. `player_moved` reports `start`, `ping`,
+and `stop`, with nonzero distance, camera distance, rotation, FOV-change,
+orthographic width change, and duration metrics. It sends up to ten samples a
+second while the player moves, so a half-second jump draws as an arc on the
+map. Raise **Movement Min Ping Interval Seconds** in the settings asset to send
+fewer, for example in a slow-moving game, or turn movement off there or with
+`SetMovementTrackingEnabled(false)`. Timing uses unscaled time during pause.
 
 Clear sources with `ClearPositionSource()`, `ClearCameraSource()` and
 `ClearCameraFocusSource()`. Runtime

@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Changed
+
+- Movement tracking is on by default, and **Movement Min Ping Interval Seconds**
+  defaults to 0.1 instead of 0.5, so `player_moved` samples come up to ten times
+  a second while the player moves, following the SDK contract. A settings asset
+  saved before this keeps its stored values; turn movement on and set the
+  interval there to adopt the new behavior.
+
 ### Added
 
 - The EditMode `ContractScenarioTests` run the shared SDK scenarios in
