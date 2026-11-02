@@ -20,9 +20,9 @@ namespace TestingFloorSdk {
         public float qrHeartbeatIntervalSeconds = DefaultQrHeartbeatIntervalSeconds;
         public float qrHeartbeatVisibleSeconds = 0f;
 
-        public bool movementTrackingEnabled = false;
+        public bool movementTrackingEnabled = true;
         public float movementMinPingDistance = 0.5f;
-        public float movementMinPingIntervalSeconds = 0.5f;
+        public float movementMinPingIntervalSeconds = 0.1f;
         public float movementStartGraceSeconds = 0.05f;
         public float movementStopGraceSeconds = 0.25f;
         public float movementMinStep = 0.005f;
