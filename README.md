@@ -328,8 +328,11 @@ thresholds. Most games need only the write key and activity sources.
 
 ## Contract, development, and license
 
-See [SDK_CONTRACT.md](SDK_CONTRACT.md) for behavior shared with the
-[Unreal SDK](https://github.com/capitalisminc/testingfloor-sdk-unreal), and
+See [Tests/Contract/SDK_CONTRACT.md](Tests/Contract/SDK_CONTRACT.md) for behavior
+every Testing Floor SDK shares, such as the
+[Unreal SDK](https://github.com/capitalisminc/testingfloor-sdk-unreal). It is a copy
+of the published [SDK contract](https://github.com/capitalisminc/testingfloor-sdk-contract).
+See
 [CONTRIBUTING.md](CONTRIBUTING.md) for package tests and local development.
 [CHANGELOG.md](CHANGELOG.md) documents the changes in each release.
 
