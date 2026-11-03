@@ -19,6 +19,9 @@ namespace TestingFloorSdk {
         const string LevelKeyPrefix = "game_level.";
 
         static TestingFloorSettings _settings;
+        static CoordinateSpace _coordinates;
+        static bool _coordinateConfigurationValid = true;
+        static string _buildId;
         static IBlockingBatchSender _client;
         static Func<TestingFloorSettings, IBlockingBatchSender> s_clientFactoryForTesting;
         static ITelemetryContextProvider _contextProvider;
@@ -68,6 +71,9 @@ namespace TestingFloorSdk {
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         static void ResetStatics() {
             _settings = null;
+            _coordinates = null;
+            _coordinateConfigurationValid = true;
+            _buildId = null;
             _client = null;
             s_clientFactoryForTesting = null;
             _contextProvider = null;
@@ -159,6 +165,8 @@ namespace TestingFloorSdk {
             FinishRecordingAndFlush();
         }
 #endif
+
+        internal static EventBuilder TrackSdkEvent(string eventType) => new EventBuilder { _eventType = eventType, _sdkOwned = true };
 
         public static EventBuilder Track(string eventType) {
             return new EventBuilder { _eventType = eventType, _properties = null };
@@ -252,7 +260,7 @@ namespace TestingFloorSdk {
 
         static TrackedObject Register(string kind, Transform transform, Func<Vector3?> position, string id) {
             EnsureInitialized();
-            if (_forceDisabled || (_manageRecording && _collectionReason != null && _collectionReason != "editor_policy_disabled")) return new TrackedObject(null, kind, id);
+            if (_forceDisabled || (_manageRecording && _collectionReason != null && _collectionReason != "editor_policy_disabled" && _collectionReason != "recording_required")) return new TrackedObject(null, kind, id);
             ConfigureObjects();
             _objects.ObserveOnMutation = IsCollecting;
             return new TrackedObject(_objects.Register(kind, transform, position, id), kind, id);
@@ -472,15 +480,15 @@ namespace TestingFloorSdk {
         public static bool IsCollecting {
             get {
                 EnsureInitialized();
-                return _state == TelemetryState.Ok || _state == TelemetryState.NetworkDown;
+                return _coordinateConfigurationValid && (_state == TelemetryState.Ok || _state == TelemetryState.NetworkDown);
             }
         }
 
         /// <summary>A machine-readable reason when collection is inactive, or null when collecting.</summary>
-        public static string CollectionReason { get { EnsureInitialized(); return _collectionReason; } }
+        public static string CollectionReason { get { EnsureInitialized(); return _coordinateConfigurationValid ? _collectionReason : "missing_configuration"; } }
 
-        internal static bool TrackEventInternal(string eventType, Dictionary<string, object> eventProperties) {
-            if (eventType != null && eventType.StartsWith(ReservedEventPrefix, StringComparison.OrdinalIgnoreCase)) {
+        internal static bool TrackEventInternal(string eventType, Dictionary<string, object> eventProperties, bool sdkOwned = false) {
+            if (!sdkOwned && eventType != null && eventType.StartsWith(ReservedEventPrefix, StringComparison.OrdinalIgnoreCase)) {
                 RefuseReservedName(eventType);
                 TelemetryQueue.ReturnProperties(eventProperties);
                 return false;
@@ -506,7 +514,7 @@ namespace TestingFloorSdk {
 
 
             var context = BuildContext();
-            if (_eventProcessor != null) {
+            if (_eventProcessor != null || _coordinates != null) {
                 ProcessEvent(ref context, eventProperties);
                 eventProperties = null;
             }
@@ -547,8 +555,9 @@ namespace TestingFloorSdk {
                 }
                 TelemetryQueue.ReturnProperties(eventProperties);
             }
+            _coordinates?.Properties(context.Properties);
             try {
-                _eventProcessor.FillSnapshot(ref context);
+                _eventProcessor?.FillSnapshot(ref context);
             }
             catch (Exception ex) {
                 if (_settings != null && _settings.logErrors) {
@@ -650,6 +659,7 @@ namespace TestingFloorSdk {
                 // A refused record's properties go back to the pool, so read what a retry needs first.
                 var removals = ObjectTracker.RemovalsIn(properties);
                 var sampleIds = properties.TryGetValue("sample.id", out var ids) ? ids as string[] : null;
+                _coordinates?.Objects(properties);
                 if (QueueRecord(RecordKind.Objects, ObjectsRecordName, properties, keyframe, timestampMs)) continue;
                 refused = true;
                 _objects.Prioritize(sampleIds);
@@ -706,7 +716,7 @@ namespace TestingFloorSdk {
 
         static PlatformContext CurrentPlatform() {
             if (!_platformContextCaptured) {
-                _platformContext = PlatformContext.Capture();
+                _platformContext = PlatformContext.Capture().WithBuildId(_buildId);
                 _platformContextCaptured = true;
             }
             return _platformContext.WithScreenSize(Screen.width, Screen.height);
@@ -720,6 +730,7 @@ namespace TestingFloorSdk {
             ResetStatics();
             TelemetryQueue.ResetStatics();
             _settings = settings;
+            CaptureConfiguration();
             _state = TelemetryState.Ok;
             _initialized = true;
             s_captureForTesting = capture;
@@ -733,6 +744,7 @@ namespace TestingFloorSdk {
             ResetStatics();
             TelemetryQueue.ResetStatics();
             _settings = settings;
+            CaptureConfiguration();
             _state = TelemetryState.Ok;
             _initialized = true;
             s_senderForTesting = sender;
@@ -764,9 +776,15 @@ namespace TestingFloorSdk {
             return snapshot;
         }
 
+        static void CaptureConfiguration() {
+            _buildId = _settings != null ? _settings.buildId : null;
+            _coordinateConfigurationValid = CoordinateSpace.TryCapture(_settings != null ? _settings.coordinateTransform : null, out _coordinates);
+        }
+
         static void EnsureInitialized() {
             if (!_initialized) {
                 _settings = TestingFloorSettings.Current;
+                CaptureConfiguration();
                 _initialized = true;
                 _manageRecording = true;
             }
@@ -783,7 +801,7 @@ namespace TestingFloorSdk {
                 if (force || now >= _nextRecordingPollAt || (active != null && active.HasLease && !active.LeaseActive(now))) {
                     _nextRecordingPollAt = now + 250;
                     var candidate = TestingFloorRecording.Discover();
-                    TestingFloorRecording.Observe(candidate);
+                    candidate = TestingFloorRecording.Observe(candidate);
                     if (active != null && !active.Closed && candidate != null &&
                         (!string.Equals(active.RecordingUuid, candidate.RecordingUuid, StringComparison.Ordinal) ||
                          !string.Equals(active.TelemetryDirectory, candidate.TelemetryDirectory, StringComparison.Ordinal))) {
@@ -796,7 +814,7 @@ namespace TestingFloorSdk {
                             candidate = active;
                         }
                         var reason = CollectionBlockReason(candidate.HasLease && candidate.LeaseActive(now));
-                        if (reason == null || reason == "editor_policy_disabled") {
+                        if (reason == null || reason == "editor_policy_disabled" || reason == "recording_required") {
                             if (candidate.LeaseVersion != 0 && (!candidate.TelemetryRequested || !candidate.HasLease)) reason = "editor_policy_disabled";
                             if (candidate.HasLease && !candidate.LeaseActive(now)) reason = "lease_expired";
                         }
@@ -866,7 +884,8 @@ namespace TestingFloorSdk {
             if (_forceDisabled) return "force_disabled";
             if (s_automationForTesting ?? TestingFloorSettings.IsAutomation) return "automation";
             if (_settings == null || !_settings.enabled) return "master_disabled";
-            if (string.IsNullOrWhiteSpace(_settings.writeKey) || string.IsNullOrWhiteSpace(_settings.endpoint)) return "missing_configuration";
+            if (!_coordinateConfigurationValid || string.IsNullOrWhiteSpace(_settings.writeKey) || string.IsNullOrWhiteSpace(_settings.endpoint)) return "missing_configuration";
+            if (_settings.recordingOnly && !activeRecording) return "recording_required";
             if ((s_editorForTesting ?? Application.isEditor) && !_settings.enableInEditor &&
                 !(_settings.enableInEditorWhileRecording && activeRecording)) return "editor_policy_disabled";
             return null;

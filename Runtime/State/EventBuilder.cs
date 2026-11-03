@@ -7,6 +7,7 @@ namespace TestingFloorSdk {
         internal string _eventType;
         internal Dictionary<string, object> _properties;
         bool _sent;
+        internal bool _sdkOwned;
 
         EventBuilder SetValue(string key, object value) {
             if (_sent) throw new InvalidOperationException("This event has already been sent. Call Track to create another event.");
@@ -35,7 +36,7 @@ namespace TestingFloorSdk {
             _sent = true;
             var properties = _properties;
             _properties = null;
-            return global::TestingFloorSdk.TestingFloor.TrackEventInternal(_eventType, properties);
+            return global::TestingFloorSdk.TestingFloor.TrackEventInternal(_eventType, properties, _sdkOwned);
         }
     }
 }

@@ -5,6 +5,9 @@ namespace TestingFloorSdk.Editor {
     [CustomEditor(typeof(TestingFloorSettings))]
     public sealed class TestingFloorSettingsInspector : UnityEditor.Editor {
         SerializedProperty _enabled;
+        SerializedProperty _recordingOnly;
+        SerializedProperty _buildId;
+        SerializedProperty _coordinateTransform;
         SerializedProperty _enableInEditor;
         SerializedProperty _enableInEditorWhileRecording;
         SerializedProperty _logErrors;
@@ -41,6 +44,9 @@ namespace TestingFloorSdk.Editor {
 
         void OnEnable() {
             _enabled = serializedObject.FindProperty("enabled");
+            _recordingOnly = serializedObject.FindProperty("recordingOnly");
+            _buildId = serializedObject.FindProperty("buildId");
+            _coordinateTransform = serializedObject.FindProperty("coordinateTransform");
             _enableInEditor = serializedObject.FindProperty("enableInEditor");
             _enableInEditorWhileRecording = serializedObject.FindProperty("enableInEditorWhileRecording");
             _logErrors = serializedObject.FindProperty("logErrors");
@@ -77,6 +83,9 @@ namespace TestingFloorSdk.Editor {
 
             EditorGUILayout.LabelField("General", EditorStyles.boldLabel);
             EditorGUILayout.PropertyField(_enabled);
+            EditorGUILayout.PropertyField(_recordingOnly, new GUIContent("Only During Recordings", "Collect only while an active recording requests telemetry, including in built games."));
+            EditorGUILayout.PropertyField(_buildId, new GUIContent("Build ID", "Immutable artifact identity, separate from the display version."));
+            EditorGUILayout.PropertyField(_coordinateTransform, new GUIContent("Output Coordinates"), true);
             EditorGUILayout.PropertyField(_enableInEditor, new GUIContent("Collect During Ordinary Editor Play"));
             EditorGUILayout.PropertyField(_enableInEditorWhileRecording, new GUIContent("Collect While Recording", "Permit telemetry during an active Testing Floor recording, even when ordinary editor telemetry is off."));
             EditorGUILayout.PropertyField(_logErrors);
@@ -141,7 +150,7 @@ namespace TestingFloorSdk.Editor {
             EditorGUILayout.LabelField("Movement Tracking", EditorStyles.boldLabel);
             EditorGUILayout.PropertyField(
                 _movementEnabled,
-                new GUIContent("Enabled", "Emit a debounced player_moved event when the player position or registered camera moves (position, rotation, or FOV). Requires TestingFloor.SetPositionSource(...) at runtime; camera signals are picked up from TestingFloor.SetCameraSource(...) / UseMainCamera() when set.")
+                new GUIContent("Enabled", "Emit a debounced $tf_player_moved event when the player position or registered camera moves (position, rotation, or FOV). Requires TestingFloor.SetPositionSource(...) at runtime; camera signals are picked up from TestingFloor.SetCameraSource(...) / UseMainCamera() when set.")
             );
             using (new EditorGUI.DisabledScope(!_movementEnabled.boolValue)) {
                 _showAdvancedMovementTuning = EditorGUILayout.Foldout(_showAdvancedMovementTuning, "Advanced Tuning", true);

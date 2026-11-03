@@ -7,6 +7,7 @@ namespace TestingFloorSdk {
         public readonly string Os;
         public readonly string Locale;
         public readonly string AppVersion;
+        public readonly string BuildId;
         public readonly string UnityVersion;
         public readonly int ScreenWidth;
         public readonly int ScreenHeight;
@@ -23,10 +24,11 @@ namespace TestingFloorSdk {
             int screenHeight,
             string deviceModel,
             string sdkVersion,
-            bool editor = false) {
+            bool editor = false, string buildId = null) {
             Os = os;
             Locale = locale;
             AppVersion = appVersion;
+            BuildId = buildId;
             UnityVersion = unityVersion;
             ScreenWidth = screenWidth;
             ScreenHeight = screenHeight;
@@ -36,7 +38,10 @@ namespace TestingFloorSdk {
         }
 
         public PlatformContext WithScreenSize(int width, int height) => new PlatformContext(
-            Os, Locale, AppVersion, UnityVersion, width, height, DeviceModel, SdkVersion, Editor);
+            Os, Locale, AppVersion, UnityVersion, width, height, DeviceModel, SdkVersion, Editor, BuildId);
+
+        public PlatformContext WithBuildId(string buildId) => new PlatformContext(
+            Os, Locale, AppVersion, UnityVersion, ScreenWidth, ScreenHeight, DeviceModel, SdkVersion, Editor, buildId);
 
         public static PlatformContext Capture() {
             return new PlatformContext(
@@ -138,6 +143,6 @@ namespace TestingFloorSdk {
     }
 
     internal static class TestingFloorVersion {
-        public const string Value = "0.7.0";
+        public const string Value = "0.8.0";
     }
 }

@@ -90,7 +90,7 @@ public sealed class ToCentimeters : ITelemetryContextProvider {
 TestingFloor.RegisterEventProcessor(new ToCentimeters());
 ```
 
-It runs for `player_moved` and `player_teleported` too, but not for session
+It runs for `$tf_player_moved` and `$tf_player_teleported` too, but not for session
 state or tracked-object records. Those records copy `game_level.*` from the
 processed event.
 
@@ -215,7 +215,7 @@ many characters instead, don't point it at a selected one: leave it unset and
 track each character with `TrackObject`.
 
 Movement tracking is on by default and samples player or camera-only activity
-once a position or camera source is set. `player_moved` reports `start`, `ping`,
+once a position or camera source is set. `$tf_player_moved` reports `start`, `ping`,
 and `stop`, with nonzero distance, camera distance, rotation, FOV-change,
 orthographic width change, and duration metrics. It sends up to ten samples a
 second while the player moves, so a half-second jump draws as an arc on the
@@ -235,7 +235,7 @@ await MovePlayerAsync(destination);
 ```
 
 For an instantaneous move, call `RecordTeleport(start, end, "respawn")` after
-moving. A scope suspends movement sampling, emits one `player_teleported` event,
+moving. A scope suspends movement sampling, emits one `$tf_player_teleported` event,
 and resets the destination baseline. Call `teleport.Cancel()` to cancel without
 an event. Positions and scalar distances are meters.
 
@@ -339,3 +339,16 @@ See
 [CHANGELOG.md](CHANGELOG.md) documents the changes in each release.
 
 MIT. See [LICENSE.md](LICENSE.md) and [ThirdPartyNotices.md](ThirdPartyNotices.md).
+
+
+### Immutable builds and recording-only collection
+
+Supply the same immutable build ID to the SDK, build upload and map publication. A readable version label may be reused; an artifact identity must change when the built artifact or output coordinate space changes. Collection still defaults to always in built games. Recording-only mode waits for an active recording that requests telemetry; discovery continues while waiting, and pauses or expired leases stop collection. Editor policy still applies.
+
+Set `buildId` and `recordingOnly` on the TestingFloorSettings asset. Its optional `coordinateTransform` has `enabled`, `axes`, `scale`, and `offset` fields. For example, signed axes `(2,-1,3)`, scale `2`, offset `(10,20,30)` map native `(x,y,z)` to `(2y+10,-2x+20,2z+30)`. The settings inspector exposes these controls; set them before the client starts.
+
+Axes must be a signed permutation of 1–3; scale must be positive and finite; offsets must be finite. Invalid configuration disables collection. Configuration is captured when the client starts. Object positions quantize in native units before conversion, and movement thresholds run before conversion. Directions only permute/sign axes; converted events omit native Euler fields and retain forward/up vectors. Arbitrary properties are not guessed, and the event processor runs after conversion. Map bounds, axes and units must describe the configured output space.
+
+Automatic movement and teleport events now use `$tf_player_moved` and `$tf_player_teleported`. Update filters that used their previous automatic names. Games may still send their own `player_moved` and `player_teleported`; the public tracking API rejects reserved `$tf_` names.
+
+Built games use the launch argument's telemetry directory to read the desktop app's renewable `recording-payload.json`. The file must name the same recording UUID. After observing a renewable lease, a missing or unreadable file retains that lease only until expiry; it cannot revive the static launch hint. Paused leases keep renewing with `telemetry_requested:false`. Recording-only mode requires a desktop app version that publishes this file; older desktop apps cannot activate that mode in built games.

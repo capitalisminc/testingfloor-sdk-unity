@@ -53,6 +53,45 @@ namespace TestingFloorSdk.Tests {
             JsonPayloadWriter.CollectorBodyByteCap, JsonPayloadWriter.CollectorEventByteCap, null, out _, out _));
 
         [Test]
+        public void OutputSpaceAlignsEventsObjectsAndLengthsBeforeTheProcessor() {
+            _settings.buildId = "example-build";
+            _settings.coordinateTransform = new CoordinateTransform { enabled = true, axes = new Vector3Int(2, -1, 3), scale = 2, offset = new Vector3(10, 20, 30) };
+            global::TestingFloorSdk.TestingFloor.CaptureRecordsForTesting(ev => { _records.Add(ev); return true; }, _settings);
+            _settings.coordinateTransform.scale = 50;
+            global::TestingFloorSdk.TestingFloor.SetPositionSource(() => new Vector3(2, 1, 3));
+            object observed = null;
+            global::TestingFloorSdk.TestingFloor.RegisterEventProcessor(new Provider((ref ContextSnapshot context) => context.TryGetValue("player.position.x", out observed)));
+            global::TestingFloorSdk.TestingFloor.Track("example").SetVector("camera.up", Vector3.up)
+                .SetVector("camera.euler", Vector3.one).Set("camera.ortho_width", 4.0).Set("custom.position.x", 99.0).Send();
+            Assert.AreEqual(12.0, observed, "The processor sees the captured output space");
+            var json = Json(Single("example"));
+            StringAssert.Contains("\"build_id\":\"example-build\"", json);
+            StringAssert.Contains("\"player.position.y\":16", json);
+            StringAssert.Contains("\"player.position.z\":36", json);
+            StringAssert.Contains("\"camera.up.x\":1", json);
+            StringAssert.Contains("\"camera.ortho_width\":8", json);
+            StringAssert.Contains("\"custom.position.x\":99", json);
+            StringAssert.DoesNotContain("camera.euler", json);
+            global::TestingFloorSdk.TestingFloor.TrackObject("crate", () => new Vector3(2, 1, 3));
+            global::TestingFloorSdk.TestingFloor.Tick(0);
+            var objects = Single("$tf_objects").EventProperties;
+            CollectionAssert.AreEqual(new[] { 12.0 }, (double[])objects["sample.x"]);
+            CollectionAssert.AreEqual(new[] { 16.0 }, (double[])objects["sample.y"]);
+            TeleportTracker.Record(Vector3.zero, new Vector3(3, 4, 0), "respawn", 0);
+            StringAssert.Contains("\"teleport.distance\":10", Json(Single("$tf_player_teleported")));
+            Assert.IsTrue(global::TestingFloorSdk.TestingFloor.Track("player_moved").Send(), "Legacy game-owned names remain usable");
+        }
+
+        [Test]
+        public void InvalidOutputSpaceDisablesCollection() {
+            _settings.coordinateTransform = new CoordinateTransform { enabled = true, axes = new Vector3Int(1, 1, 3) };
+            global::TestingFloorSdk.TestingFloor.CaptureRecordsForTesting(ev => { _records.Add(ev); return true; }, _settings);
+            Assert.IsFalse(global::TestingFloorSdk.TestingFloor.IsCollecting);
+            Assert.IsFalse(global::TestingFloorSdk.TestingFloor.Track("example").Send());
+            Assert.IsEmpty(_records);
+        }
+
+        [Test]
         public void ReservedEventNamesAreRefusedWithOneWarningPerName() {
             Assert.IsFalse(global::TestingFloorSdk.TestingFloor.Track("$tf_state").Set("example.value", 1L).Send());
             Assert.IsFalse(global::TestingFloorSdk.TestingFloor.Track("$tf_state").Send());

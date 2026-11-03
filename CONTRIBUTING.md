@@ -13,7 +13,9 @@ Use a minimal Unity 6 host project. Add this package as a local dependency in
   "dependencies": {
     "com.testingfloor.unity-sdk": "file:../../testingfloor-sdk-unity",
     "com.unity.test-framework": "1.6.0",
-    "com.unity.ugui": "2.0.0"
+    "com.unity.ugui": "2.0.0",
+    "com.unity.modules.unitywebrequest": "1.0.0",
+    "com.unity.modules.jsonserialize": "1.0.0"
   },
   "testables": ["com.testingfloor.unity-sdk"]
 }

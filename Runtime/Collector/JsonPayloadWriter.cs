@@ -139,6 +139,7 @@ namespace TestingFloorSdk.Internal {
             writer.WriteStartObject();
             WriteString(writer, "sdk_version", p.SdkVersion);
             WriteString(writer, "app_version", p.AppVersion);
+            WriteString(writer, "build_id", p.BuildId);
             WriteString(writer, "os", p.Os);
             WriteString(writer, "device_model", p.DeviceModel);
             if (!string.IsNullOrWhiteSpace(p.UnityVersion)) {
