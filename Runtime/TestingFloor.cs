@@ -801,7 +801,7 @@ namespace TestingFloorSdk {
                 if (force || now >= _nextRecordingPollAt || (active != null && active.HasLease && !active.LeaseActive(now))) {
                     _nextRecordingPollAt = now + 250;
                     var candidate = TestingFloorRecording.Discover();
-                    TestingFloorRecording.Observe(candidate);
+                    candidate = TestingFloorRecording.Observe(candidate);
                     if (active != null && !active.Closed && candidate != null &&
                         (!string.Equals(active.RecordingUuid, candidate.RecordingUuid, StringComparison.Ordinal) ||
                          !string.Equals(active.TelemetryDirectory, candidate.TelemetryDirectory, StringComparison.Ordinal))) {

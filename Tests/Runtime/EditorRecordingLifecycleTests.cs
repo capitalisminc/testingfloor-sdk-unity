@@ -59,6 +59,66 @@ namespace TestingFloorSdk.Tests {
         TelemetryEvent[] Completions() => _records.Where(record => record.EventType == "$tf_telemetry_complete").ToArray();
 
         [Test]
+        public void BuiltGameReadsRenewableFileFromLegacyLaunchDirectory() {
+            var lease = Lease("example-built-recording");
+            var path = Path.Combine(lease.TelemetryDirectory, "recording-payload.json");
+            var launch = JsonUtility.ToJson(new LaunchPayload {
+                recording_uuid = lease.RecordingUuid, telemetry_directory = lease.TelemetryDirectory,
+            });
+            void Write(bool requested, string uuid = "example-built-recording") => File.WriteAllText(path,
+                JsonUtility.ToJson(new LaunchPayload {
+                    recording_uuid = uuid, telemetry_directory = lease.TelemetryDirectory,
+                    lease_version = 1, telemetry_requested = requested, lease_expires_at_unix_ms = _now + 5000,
+                }));
+            _settings.recordingOnly = true;
+            TestingFloor.ConfigureRecordingLifecycleForTesting(_settings,
+                () => TestingFloorRecording.Resolve(null, launch, 0), () => _now,
+                ev => { _records.Add(ev); return true; }, editor: false);
+            TestingFloor.TrackObject("crate", () => Vector3.one, "example-crate");
+            Assert.IsFalse(TestingFloor.IsCollecting, "Launch metadata alone is not an active capture");
+            Write(true, "other-capture");
+            Poll();
+            Assert.IsFalse(TestingFloor.IsCollecting, "A different capture cannot renew this launch");
+            Write(true);
+            Poll();
+            Assert.IsTrue(TestingFloor.IsCollecting);
+            Assert.IsTrue(_records.Exists(record => record.EventType == "$tf_objects"));
+            _now += 6000;
+            Write(true);
+            Poll();
+            Assert.IsTrue(TestingFloor.IsCollecting, "The file renews beyond the launch-time lease");
+            Write(false);
+            Poll();
+            Assert.IsFalse(TestingFloor.IsCollecting, "A fresh paused lease requests no collection");
+            Write(true);
+            Poll();
+            Assert.IsTrue(TestingFloor.IsCollecting);
+            File.Delete(path);
+            Poll();
+            Assert.IsTrue(TestingFloor.IsCollecting, "A temporary missing file keeps only the last valid lease");
+            _now += 6000;
+            Poll();
+            Assert.IsFalse(TestingFloor.IsCollecting, "A missing file cannot revive the legacy launch hint");
+            Write(true);
+            Poll();
+            Assert.IsTrue(TestingFloor.IsCollecting);
+            File.WriteAllText(Path.Combine(lease.TelemetryDirectory, "closed.json"), _now.ToString());
+            Poll();
+            Poll();
+            Assert.IsFalse(TestingFloor.IsCollecting);
+            Assert.AreEqual(1, Completions().Length);
+        }
+
+        [Serializable]
+        sealed class LaunchPayload {
+            public string recording_uuid;
+            public string telemetry_directory;
+            public int lease_version;
+            public bool telemetry_requested;
+            public long lease_expires_at_unix_ms;
+        }
+
+        [Test]
         public void BuiltGameRecordingOnlyWaitsAndResumesWithoutLosingDormantObjects() {
             _settings.recordingOnly = true;
             TestingFloor.ConfigureRecordingLifecycleForTesting(_settings, () => _candidate, () => _now,

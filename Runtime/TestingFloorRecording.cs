@@ -67,7 +67,13 @@ namespace TestingFloorSdk {
 
         internal static TestingFloorRecording Attached => _current;
         internal static void SetActive(TestingFloorRecording recording) => _current = recording;
-        internal static void Observe(TestingFloorRecording recording) => _observed = recording;
+        internal static TestingFloorRecording Observe(TestingFloorRecording recording) {
+            var previous = _observed ?? _current;
+            if (recording != null && recording.LeaseVersion == 0 && previous != null &&
+                previous.LeaseVersion != 0 && previous.RecordingUuid == recording.RecordingUuid) return previous;
+            _observed = recording;
+            return recording;
+        }
 
         internal static TestingFloorRecording Discover() {
             if (DiscoveryForTesting != null) return DiscoveryForTesting();
@@ -78,9 +84,21 @@ namespace TestingFloorSdk {
         /// The recording a handoff names: the sidecar's text, the JSON after <c>--testing-floor=</c>
         /// (either may be null), and the editor's process ID, or 0 in a built game.
         /// </summary>
-        internal static TestingFloorRecording Resolve(string sidecar, string launchArgument, int editorProcessId) =>
-            Choose(ForEditor(TryParsePayload(sidecar, "sidecar payload"), editorProcessId),
+        internal static TestingFloorRecording Resolve(string sidecar, string launchArgument, int editorProcessId) {
+            var recording = Choose(ForEditor(TryParsePayload(sidecar, "sidecar payload"), editorProcessId),
                 () => ForEditor(TryParsePayload(launchArgument, "--testing-floor JSON"), editorProcessId));
+            if (recording == null || recording.LeaseVersion != 0 || string.IsNullOrWhiteSpace(recording.TelemetryDirectory)) return recording;
+            try {
+                var path = Path.Combine(recording.TelemetryDirectory, RecordingPayloadFileName);
+                if (File.Exists(path)) {
+                    var lease = ForEditor(TryParsePayload(File.ReadAllText(path), "recording lease"), editorProcessId);
+                    if (lease != null && lease.LeaseVersion != 0 && lease.RecordingUuid == recording.RecordingUuid) return lease;
+                }
+            }
+            catch (IOException) { /* Retry on the next recording poll. */ }
+            catch (UnauthorizedAccessException) { /* Keep the last observed lease until it expires. */ }
+            return recording;
+        }
 
         static int s_editorProcessId;
 
