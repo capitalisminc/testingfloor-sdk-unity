@@ -85,14 +85,16 @@ namespace TestingFloorSdk {
         /// (either may be null), and the editor's process ID, or 0 in a built game.
         /// </summary>
         internal static TestingFloorRecording Resolve(string sidecar, string launchArgument, int editorProcessId) {
-            var recording = Choose(ForEditor(TryParsePayload(sidecar, "sidecar payload"), editorProcessId),
-                () => ForEditor(TryParsePayload(launchArgument, "--testing-floor JSON"), editorProcessId));
-            if (recording == null || recording.LeaseVersion != 0 || string.IsNullOrWhiteSpace(recording.TelemetryDirectory)) return recording;
+            var fromSidecar = ForEditor(TryParsePayload(sidecar, "sidecar payload"), editorProcessId);
+            if (fromSidecar != null && fromSidecar.LeaseVersion != 0) return fromSidecar;
+            var recording = ForEditor(TryParsePayload(launchArgument, "--testing-floor JSON"), editorProcessId) ?? fromSidecar;
+            var locator = ForEditor(TryParsePayload(launchArgument, "--testing-floor locator", allowStale: true), editorProcessId) ?? recording;
+            if (locator == null || string.IsNullOrWhiteSpace(locator.TelemetryDirectory)) return recording;
             try {
-                var path = Path.Combine(recording.TelemetryDirectory, RecordingPayloadFileName);
+                var path = Path.Combine(locator.TelemetryDirectory, RecordingPayloadFileName);
                 if (File.Exists(path)) {
-                    var lease = ForEditor(TryParsePayload(File.ReadAllText(path), "recording lease"), editorProcessId);
-                    if (lease != null && lease.LeaseVersion != 0 && lease.RecordingUuid == recording.RecordingUuid) return lease;
+                    var lease = ForEditor(TryParsePayload(File.ReadAllText(path), "recording lease", allowStale: true), editorProcessId);
+                    if (lease != null && lease.LeaseVersion != 0 && lease.RecordingUuid == locator.RecordingUuid) return lease;
                 }
             }
             catch (IOException) { /* Retry on the next recording poll. */ }
@@ -168,10 +170,10 @@ namespace TestingFloorSdk {
             return null;
         }
 
-        static TestingFloorRecording TryParsePayload(string json, string label) {
+        static TestingFloorRecording TryParsePayload(string json, string label, bool allowStale = false) {
             if (json == null) return null;
             try {
-                return ParsePayload(json, label);
+                return ParsePayload(json, label, allowStale);
             }
             catch (Exception e) {
                 Debug.LogWarning($"[TestingFloor] Failed to parse {label}: {e.Message}");
@@ -183,7 +185,7 @@ namespace TestingFloorSdk {
             return ParsePayload(json, "test payload");
         }
 
-        static TestingFloorRecording ParsePayload(string json, string label) {
+        static TestingFloorRecording ParsePayload(string json, string label, bool allowStale = false) {
             var payload = new Payload();
             JsonUtility.FromJsonOverwrite(json, payload);
             if (payload == null) return null;
@@ -198,7 +200,7 @@ namespace TestingFloorSdk {
             var freshLease = payload.lease_version == 1 && payload.telemetry_requested &&
                 !string.IsNullOrWhiteSpace(payload.telemetry_directory) &&
                 payload.lease_expires_at_unix_ms > now && payload.lease_expires_at_unix_ms <= now + 30000;
-            if (payload.created_at_unix_ms > 0 && !freshLease) {
+            if (!allowStale && payload.created_at_unix_ms > 0 && !freshLease) {
                 var ageMs = now - payload.created_at_unix_ms;
                 if (ageMs > TimeSpan.FromHours(MaxPayloadAgeHours).TotalMilliseconds) {
                     // Stale payload — recorder probably crashed or moved on.
