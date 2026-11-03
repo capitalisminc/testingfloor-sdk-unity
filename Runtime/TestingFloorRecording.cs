@@ -99,6 +99,9 @@ namespace TestingFloorSdk {
             }
             catch (IOException) { /* Retry on the next recording poll. */ }
             catch (UnauthorizedAccessException) { /* Keep the last observed lease until it expires. */ }
+            var previous = _observed ?? _current;
+            if (previous != null && previous.LeaseVersion != 0 && previous.RecordingUuid == locator.RecordingUuid &&
+                previous.TelemetryDirectory == locator.TelemetryDirectory) return previous;
             return recording;
         }
 
